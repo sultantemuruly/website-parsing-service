@@ -25,6 +25,18 @@ deep_config = CrawlerRunConfig(
     verbose=True
 )
 
+deep_streaming_config = CrawlerRunConfig(
+    deep_crawl_strategy=BFSDeepCrawlStrategy(
+        max_depth=2, 
+        include_external=False
+    ),
+    scraping_strategy=LXMLWebScrapingStrategy(),
+    cache_mode=CacheMode.BYPASS,
+    markdown_generator=md_generator,
+    verbose=True,
+    stream=True
+)
+
 async def crawl_page(url: str):
     async with AsyncWebCrawler() as crawler:
         result = await crawler.arun(url, config=basic_config)
@@ -34,3 +46,8 @@ async def crawl_page_deep(url: str):
     async with AsyncWebCrawler() as crawler:
         result = await crawler.arun(url, config=deep_config)
     return result
+
+async def crawl_page_deep_streaming(url: str):
+    async with AsyncWebCrawler() as crawler:
+        async for result in await crawler.arun(url, config=deep_streaming_config):
+            yield result
