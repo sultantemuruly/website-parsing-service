@@ -1,7 +1,7 @@
-import asyncio
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from crawl import crawl_page
+from crawl import crawl_page, crawl_page_deep
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
@@ -21,16 +21,40 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+def serialize_page(page) -> dict[str, Any]:
+    return {
+        "url": page.url,
+        "raw_markdown": page.markdown.raw_markdown,
+        "fit_markdown": page.markdown.fit_markdown,
+        "images": page.media.get("images", []),
+        "videos": page.media.get("videos", []),
+        "audios": page.media.get("audios", []),
+        "tables": page.media.get("tables", []),
+        "metadata": page.metadata,
+    }
+
+
 @app.get("/")
 async def read_root():
     return {"status": "ok"}
 
-@app.get("/crawl")
-def crawl(url: str):
+
+@app.post("/crawl")
+async def crawl(url: str) -> dict[str, Any]:
     if not url:
-        return {"error": "URL is required"}
+        raise HTTPException(status_code=400, detail="URL is required")
     try:
-        result = asyncio.run(crawl_page(url))
-        return {"result": result}
+        return serialize_page(await crawl_page(url))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/crawl-deep")
+async def crawl_deep(url: str) -> list[dict[str, Any]]:
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    try:
+        return [serialize_page(page) for page in await crawl_page_deep(url)]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
