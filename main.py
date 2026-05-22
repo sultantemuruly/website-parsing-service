@@ -1,6 +1,7 @@
-def main():
-    print("Hello from website-parsing-service!")
+from fastapi import FastAPI
 
+app = FastAPI()
 
-if __name__ == "__main__":
-    main()
+@app.get("/")
+async def read_root():
+    return {"status": "ok"}
