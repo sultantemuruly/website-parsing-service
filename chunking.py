@@ -24,7 +24,7 @@ class SlidingWindowChunking:
             chunks.append(' '.join(words[i:i + self.window_size]))
         return chunks
 
-def chunk_nlp_sentence(text):
+def chunk_nlp_sentence(text: str) -> list[str]:
     chunker = NlpSentenceChunking()
     chunks = chunker.chunk(text)
     return chunks

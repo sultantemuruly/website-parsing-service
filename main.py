@@ -1,6 +1,7 @@
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import crawl_page, crawl_page_deep, crawl_page_deep_streaming
@@ -47,8 +48,7 @@ async def crawl(url: str) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        # return serialize_page(await crawl_page(url))
-        return await crawl_page(url)
+        return serialize_page(await crawl_page(url))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -93,3 +93,12 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
         "pages": pages,
         "failures": failures,
     }
+
+@app.post("/chunk")
+def chunk(text: str) -> list[str]:
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="Text is required")
+    try:
+        return chunk_nlp_sentence(text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

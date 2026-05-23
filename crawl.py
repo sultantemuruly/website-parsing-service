@@ -50,26 +50,9 @@ deep_streaming_config = CrawlerRunConfig(
     stream=True,
 )
 
-llm_strategy = LLMExtractionStrategy(
-    llm_config = LLMConfig(provider="openai/gpt-4o-mini", api_token=os.getenv('OPENAI_API_KEY')),
-    extraction_type="block",
-    instruction="Extract all text blocks from the content.",
-    chunk_token_threshold=1000,
-    overlap_rate=0.0,
-    apply_chunking=True,
-    input_format="markdown",   # or "html", "fit_markdown"
-    extra_args={"temperature": 0.0, "max_tokens": 800}
-)
-
-basic_config_2 = CrawlerRunConfig(
-    cache_mode=CacheMode.BYPASS,
-    markdown_generator=md_generator,
-    extraction_strategy=llm_strategy,
-)
-
 async def crawl_page(url: str):
     async with AsyncWebCrawler() as crawler:
-        return await crawler.arun(url, config=basic_config_2)
+        return await crawler.arun(url, config=basic_config)
 
 
 async def crawl_page_deep(url: str):
