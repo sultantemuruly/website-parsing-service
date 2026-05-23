@@ -10,3 +10,6 @@ wheels/
 .venv
 
 .env
+
+# Playwright browser binaries (installed during Render build)
+.playwright-browsers/

@@ -1,8 +1,9 @@
 services:
   - type: web
     name: website-parsing-service
-    runtime: docker
-    dockerfilePath: ./Dockerfile
+    runtime: python
+    buildCommand: "./build.sh"
+    startCommand: "uvicorn main:app --host 0.0.0.0 --port $PORT"
     envVars:
       - key: PLAYWRIGHT_BROWSERS_PATH
-        value: /ms-playwright
+        value: /opt/render/project/src/.playwright-browsers
