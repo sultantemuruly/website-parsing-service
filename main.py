@@ -1,46 +1,44 @@
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 
-from crawl import crawl_page, crawl_page_deep, crawl_page_deep_streaming
+from crawl import crawl_site, scrape_page
 from chunking import chunk_nlp_sentence
 
 app = FastAPI()
 
-origins = [
-    "http://localhost",
-    "http://localhost:8080",
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000"
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=[
+        "http://localhost",
+        "http://localhost:8080",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
-def serialize_page(page) -> dict[str, Any]:
-    if not page.success:
-        raise ValueError(page.error_message or "Crawl failed")
-    if page.markdown is None:
-        raise ValueError(page.error_message or "No markdown generated for page")
+def _metadata_dict(metadata) -> dict[str, Any]:
+    if metadata is None:
+        return {}
+    if isinstance(metadata, dict):
+        return metadata
+    return {k: v for k, v in vars(metadata).items() if v is not None}
 
+
+def serialize_page(page) -> dict[str, Any]:
+    if not page.markdown:
+        raise ValueError("No markdown content for page")
+    metadata = _metadata_dict(page.metadata)
     return {
-        "url": page.url,
-        "raw_markdown": page.markdown.raw_markdown,
-        "fit_markdown": page.markdown.fit_markdown,
-        "images": page.media.get("images", []),
-        "videos": page.media.get("videos", []),
-        "audios": page.media.get("audios", []),
-        "tables": page.media.get("tables", []),
-        "metadata": page.metadata,
+        "url": metadata.get("sourceURL", ""),
+        "markdown": page.markdown,
+        "metadata": metadata,
     }
 
 
@@ -54,7 +52,7 @@ async def crawl(url: str) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return serialize_page(await crawl_page(url))
+        return serialize_page(await scrape_page(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -62,15 +60,16 @@ async def crawl(url: str) -> dict[str, Any]:
 
 
 @app.post("/crawl/site")
-async def crawl_site(url: str) -> list[dict[str, Any]]:
+async def crawl_site_endpoint(url: str) -> list[dict[str, Any]]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return [serialize_page(page) for page in await crawl_page_deep(url)]
+        return [serialize_page(page) for page in await crawl_site(url)]
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/crawl/site/partial")
 async def crawl_site_partial(url: str) -> dict[str, Any]:
@@ -81,28 +80,21 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
 
     try:
-        async for page in crawl_page_deep_streaming(url):
-            if page.success:
+        for page in await crawl_site(url):
+            try:
                 pages.append(serialize_page(page))
-            else:
-                failures.append(
-                    {"url": page.url, "error": page.error_message or "Unknown error"}
-                )
+            except ValueError as e:
+                failures.append({
+                    "url": _metadata_dict(page.metadata).get("sourceURL", ""),
+                    "error": str(e),
+                })
     except Exception as e:
         if pages or failures:
-            return {
-                "partial": True,
-                "pages": pages,
-                "failures": failures,
-                "error": str(e),
-            }
+            return {"partial": True, "pages": pages, "failures": failures, "error": str(e)}
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {
-        "partial": bool(failures),
-        "pages": pages,
-        "failures": failures,
-    }
+    return {"partial": bool(failures), "pages": pages, "failures": failures}
+
 
 @app.post("/chunk")
 def chunk(text: str) -> list[str]:

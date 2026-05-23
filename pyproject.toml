@@ -5,10 +5,8 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "crawl4ai>=0.8.6",
-    "dotenv>=0.9.9",
+    "firecrawl-py>=1.15.0",
     "fastapi[standard]>=0.136.1",
-    "langchain-text-splitters>=1.1.2",
     "nltk>=3.9.4",
-    "scikit-learn>=1.8.0",
+    "python-dotenv>=1.2.2",
 ]
