@@ -25,13 +25,13 @@ app.add_middleware(
 def serialize_page(page) -> dict[str, Any]:
     return {
         "url": page.url,
-        # "raw_markdown": page.markdown.raw_markdown,
-        # "fit_markdown": page.markdown.fit_markdown,
-        # "images": page.media.get("images", []),
-        # "videos": page.media.get("videos", []),
-        # "audios": page.media.get("audios", []),
-        # "tables": page.media.get("tables", []),
-        # "metadata": page.metadata,
+        "raw_markdown": page.markdown.raw_markdown,
+        "fit_markdown": page.markdown.fit_markdown,
+        "images": page.media.get("images", []),
+        "videos": page.media.get("videos", []),
+        "audios": page.media.get("audios", []),
+        "tables": page.media.get("tables", []),
+        "metadata": page.metadata,
     }
 
 
