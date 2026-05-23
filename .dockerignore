@@ -1,0 +1,10 @@
+.venv
+.git
+.cursor
+__pycache__
+*.py[cod]
+.env
+*.egg-info
+dist
+build
+wheels
