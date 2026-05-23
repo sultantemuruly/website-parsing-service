@@ -19,8 +19,13 @@ RUN uv run playwright install --with-deps chromium \
 COPY . .
 RUN uv sync --frozen --no-dev
 
+# NLTK data used by /chunk (sentence tokenization).
+RUN uv run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
+
 ENV PATH="/app/.venv/bin:$PATH"
+
+RUN chmod +x /app/start.sh
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+CMD ["./start.sh"]
