@@ -1,4 +1,12 @@
 import asyncio
+import os
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+if not OPENAI_API_KEY:
+    raise ValueError("OPENAI_API_KEY is not set")
 
 from crawl4ai import (
     AsyncWebCrawler,
@@ -7,6 +15,8 @@ from crawl4ai import (
     CrawlerRunConfig,
     UndetectedAdapter,
     VirtualScrollConfig,
+    LLMConfig,
+    LLMExtractionStrategy,
 )
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 from crawl4ai.content_filter_strategy import PruningContentFilter
@@ -40,9 +50,26 @@ deep_streaming_config = CrawlerRunConfig(
     stream=True,
 )
 
+llm_strategy = LLMExtractionStrategy(
+    llm_config = LLMConfig(provider="openai/gpt-4o-mini", api_token=os.getenv('OPENAI_API_KEY')),
+    extraction_type="block",
+    instruction="Extract all text blocks from the content.",
+    chunk_token_threshold=1000,
+    overlap_rate=0.0,
+    apply_chunking=True,
+    input_format="markdown",   # or "html", "fit_markdown"
+    extra_args={"temperature": 0.0, "max_tokens": 800}
+)
+
+basic_config_2 = CrawlerRunConfig(
+    cache_mode=CacheMode.BYPASS,
+    markdown_generator=md_generator,
+    extraction_strategy=llm_strategy,
+)
+
 async def crawl_page(url: str):
     async with AsyncWebCrawler() as crawler:
-        return await crawler.arun(url, config=basic_config)
+        return await crawler.arun(url, config=basic_config_2)
 
 
 async def crawl_page_deep(url: str):

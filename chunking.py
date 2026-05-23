@@ -24,6 +24,21 @@ class SlidingWindowChunking:
             chunks.append(' '.join(words[i:i + self.window_size]))
         return chunks
 
+def chunk_nlp_sentence(text):
+    chunker = NlpSentenceChunking()
+    chunks = chunker.chunk(text)
+    return chunks
+
+def chunk_topic_segmentation(text):
+    chunker = TopicSegmentationChunking()
+    chunks = chunker.chunk(text)
+    return chunks
+
+def chunk_sliding_window(text):
+    chunker = SlidingWindowChunking()
+    chunks = chunker.chunk(text)
+    return chunks
+
 # # Example Usage
 # def main():
 #     text = """
