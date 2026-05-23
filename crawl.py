@@ -1,12 +1,4 @@
 import asyncio
-import os
-from dotenv import load_dotenv
-
-load_dotenv(override=True)
-
-OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is not set")
 
 from crawl4ai import (
     AsyncWebCrawler,
@@ -15,8 +7,6 @@ from crawl4ai import (
     CrawlerRunConfig,
     UndetectedAdapter,
     VirtualScrollConfig,
-    LLMConfig,
-    LLMExtractionStrategy,
 )
 from crawl4ai.async_crawler_strategy import AsyncPlaywrightCrawlerStrategy
 from crawl4ai.content_filter_strategy import PruningContentFilter
