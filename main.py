@@ -27,6 +27,11 @@ app.add_middleware(
 
 
 def serialize_page(page) -> dict[str, Any]:
+    if not page.success:
+        raise ValueError(page.error_message or "Crawl failed")
+    if page.markdown is None:
+        raise ValueError(page.error_message or "No markdown generated for page")
+
     return {
         "url": page.url,
         "raw_markdown": page.markdown.raw_markdown,
@@ -50,6 +55,8 @@ async def crawl(url: str) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
         return serialize_page(await crawl_page(url))
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -60,6 +67,8 @@ async def crawl_site(url: str) -> list[dict[str, Any]]:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
         return [serialize_page(page) for page in await crawl_page_deep(url)]
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

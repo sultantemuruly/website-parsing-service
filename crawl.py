@@ -18,9 +18,26 @@ md_generator = DefaultMarkdownGenerator(
     content_filter=PruningContentFilter(threshold=0.2, threshold_type="adaptive")
 )
 
+# Playwright in Docker/Railway needs these flags; stealth helps with bot-protected sites.
+browser_config = BrowserConfig(
+    headless=True,
+    enable_stealth=True,
+    extra_args=[
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+    ],
+)
+
 basic_config = CrawlerRunConfig(
     cache_mode=CacheMode.BYPASS,
     markdown_generator=md_generator,
+    magic=True,
+    wait_until="load",
+    page_timeout=90000,
+    delay_before_return_html=2.0,
+    scan_full_page=True,
+    remove_overlay_elements=True,
 )
 
 deep_config = CrawlerRunConfig(
@@ -28,6 +45,9 @@ deep_config = CrawlerRunConfig(
     scraping_strategy=LXMLWebScrapingStrategy(),
     cache_mode=CacheMode.BYPASS,
     markdown_generator=md_generator,
+    magic=True,
+    wait_until="load",
+    page_timeout=90000,
     verbose=True,
 )
 
@@ -36,22 +56,34 @@ deep_streaming_config = CrawlerRunConfig(
     scraping_strategy=LXMLWebScrapingStrategy(),
     cache_mode=CacheMode.BYPASS,
     markdown_generator=md_generator,
+    magic=True,
+    wait_until="load",
+    page_timeout=90000,
     verbose=True,
     stream=True,
 )
 
+
+def _default_crawler() -> AsyncWebCrawler:
+    strategy = AsyncPlaywrightCrawlerStrategy(
+        browser_config=browser_config,
+        browser_adapter=UndetectedAdapter(),
+    )
+    return AsyncWebCrawler(crawler_strategy=strategy, config=browser_config)
+
+
 async def crawl_page(url: str):
-    async with AsyncWebCrawler() as crawler:
+    async with _default_crawler() as crawler:
         return await crawler.arun(url, config=basic_config)
 
 
 async def crawl_page_deep(url: str):
-    async with AsyncWebCrawler() as crawler:
+    async with _default_crawler() as crawler:
         return await crawler.arun(url, config=deep_config)
 
 
 async def crawl_page_deep_streaming(url: str):
-    async with AsyncWebCrawler() as crawler:
+    async with _default_crawler() as crawler:
         async for result in await crawler.arun(url, config=deep_streaming_config):
             yield result
 
@@ -74,8 +106,6 @@ async def mock_external_fetch(url: str) -> str:
 </html>"""
 
 
-anti_bot_browser_config = BrowserConfig(headless=True, enable_stealth=True)
-
 anti_bot_run_config = CrawlerRunConfig(
     magic=True,
     wait_until="load",
@@ -93,11 +123,7 @@ anti_bot_run_config = CrawlerRunConfig(
 
 
 def _undetected_crawler() -> AsyncWebCrawler:
-    strategy = AsyncPlaywrightCrawlerStrategy(
-        browser_config=anti_bot_browser_config,
-        browser_adapter=UndetectedAdapter(),
-    )
-    return AsyncWebCrawler(crawler_strategy=strategy, config=anti_bot_browser_config)
+    return _default_crawler()
 
 
 def print_crawl_stats(result) -> None:
