@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: website-parsing-service
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: PLAYWRIGHT_BROWSERS_PATH
+        value: /ms-playwright
