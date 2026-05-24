@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
-from chunking import chunk_markdown
+from chunking import chunk_markdown_safe
 from social_platforms import (
     scrape_facebook_url,
     scrape_instagram_url,
@@ -39,9 +39,11 @@ def serialize_page(page) -> dict[str, Any]:
     if not page.markdown:
         raise ValueError("No markdown content for page")
     metadata = _metadata_dict(page.metadata)
+    markdown = page.markdown
     return {
         "url": _page_url(page.metadata),
-        "markdown": page.markdown,
+        "markdown": markdown,
+        "markdown_chunks": chunk_markdown_safe(markdown),
         "metadata": metadata,
     }
 
@@ -133,7 +135,7 @@ def chunk(text: str) -> list[str]:
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
     try:
-        return chunk_markdown(text)
+        return chunk_markdown_safe(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
  
