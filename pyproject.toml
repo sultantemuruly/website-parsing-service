@@ -9,4 +9,5 @@ dependencies = [
     "fastapi[standard]>=0.136.1",
     "nltk>=3.9.4",
     "python-dotenv>=1.2.2",
+    "brightdata-sdk>=2.3.1",
 ]

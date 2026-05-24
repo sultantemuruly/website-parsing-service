@@ -84,6 +84,15 @@ wheels = [
 ]
 
 [[package]]
+name = "aiolimiter"
+version = "1.2.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/f1/23/b52debf471f7a1e42e362d959a3982bdcb4fe13a5d46e63d28868807a79c/aiolimiter-1.2.1.tar.gz", hash = "sha256:e02a37ea1a855d9e832252a105420ad4d15011505512a1a1d814647451b5cca9", size = 7185, upload-time = "2024-12-08T15:31:51.496Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f3/ba/df6e8e1045aebc4778d19b8a3a9bc1808adb1619ba94ca354d9ba17d86c3/aiolimiter-1.2.1-py3-none-any.whl", hash = "sha256:d3f249e9059a20badcb56b61601a83556133655c11d1eb3dd3e04ff069e5f3c7", size = 6711, upload-time = "2024-12-08T15:31:49.874Z" },
+]
+
+[[package]]
 name = "aiosignal"
 version = "1.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -132,6 +141,25 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/9a/8e/82a0fe20a541c03148528be8cac2408564a6c9a0cc7e9171802bc1d26985/attrs-26.1.0.tar.gz", hash = "sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32", size = 952055, upload-time = "2026-03-19T14:22:25.026Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/64/b4/17d4b0b2a2dc85a6df63d1157e028ed19f90d4cd97c36717afef2bc2f395/attrs-26.1.0-py3-none-any.whl", hash = "sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309", size = 67548, upload-time = "2026-03-19T14:22:23.645Z" },
+]
+
+[[package]]
+name = "brightdata-sdk"
+version = "2.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aiohttp" },
+    { name = "aiolimiter" },
+    { name = "click" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "python-dotenv" },
+    { name = "requests" },
+    { name = "tldextract" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/49/be/cef9cf5f4fa84361ffb6d7108f08509bcdf0254153157bae9eeb551192d2/brightdata_sdk-2.3.1.tar.gz", hash = "sha256:966e6fe4cc0379b9884d1fc607e4567fbbe8100b0087c3b17047ef6bffcb4f39", size = 200692, upload-time = "2026-04-23T08:17:50.39Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/09/95/a96dfed30733684aa5ca464b143959157b695114a84e9e85b3364eea4758/brightdata_sdk-2.3.1-py3-none-any.whl", hash = "sha256:372c865fa389d7168b78ebc10e1b28802b34ca467aedb19dfd36d6c62591f90c", size = 344532, upload-time = "2026-04-23T08:17:48.875Z" },
 ]
 
 [[package]]
@@ -365,6 +393,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/83/18/7a7c15657a3da5569b26fc51cde6a80f8d84cb54b3b1aea6d74a103db4ad/fastar-0.11.0-cp314-cp314t-win32.whl", hash = "sha256:5744551bc67c6fc6581cbd0e34a0fd6e2cd0bd30b43e94b1c3119cf35064b162", size = 453601, upload-time = "2026-04-13T17:11:53.726Z" },
     { url = "https://files.pythonhosted.org/packages/6d/d8/331b59a6de279f3ad75c10c02c40a12f21d64a437d9c3d6f1af2dcbd7a76/fastar-0.11.0-cp314-cp314t-win_amd64.whl", hash = "sha256:f4ce44e3b56c47cf38244b98d29f269b259740a580c47a2552efa5b96a5458fb", size = 486436, upload-time = "2026-04-13T17:11:40.089Z" },
     { url = "https://files.pythonhosted.org/packages/6b/fd/5390ec4f49100f3ecb9968a392f9e6d039f1e3fe0ecd28443716ff01e589/fastar-0.11.0-cp314-cp314t-win_arm64.whl", hash = "sha256:76c1359314355eafbc6989f20fb1ad565a3d10200117923b9da765a17e2f6f11", size = 461049, upload-time = "2026-04-13T17:11:25.918Z" },
+]
+
+[[package]]
+name = "filelock"
+version = "3.29.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/fe/997687a931ab51049acce6fa1f23e8f01216374ea81374ddee763c493db5/filelock-3.29.0.tar.gz", hash = "sha256:69974355e960702e789734cb4871f884ea6fe50bd8404051a3530bc07809cf90", size = 57571, upload-time = "2026-04-19T15:39:10.068Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/81/47/dd9a212ef6e343a6857485ffe25bba537304f1913bdbed446a23f7f592e1/filelock-3.29.0-py3-none-any.whl", hash = "sha256:96f5f6344709aa1572bbf631c640e4ebeeb519e08da902c39a001882f30ac258", size = 39812, upload-time = "2026-04-19T15:39:08.752Z" },
 ]
 
 [[package]]
@@ -1056,6 +1093,18 @@ wheels = [
 ]
 
 [[package]]
+name = "requests-file"
+version = "3.0.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3c/f8/5dc70102e4d337063452c82e1f0d95e39abfe67aa222ed8a5ddeb9df8de8/requests_file-3.0.1.tar.gz", hash = "sha256:f14243d7796c588f3521bd423c5dea2ee4cc730e54a3cac9574d78aca1272576", size = 6967, upload-time = "2025-10-20T18:56:42.279Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/d5/de8f089119205a09da657ed4784c584ede8381a0ce6821212a6d4ca47054/requests_file-3.0.1-py2.py3-none-any.whl", hash = "sha256:d0f5eb94353986d998f80ac63c7f146a307728be051d4d1cd390dbdb59c10fa2", size = 4514, upload-time = "2025-10-20T18:56:41.184Z" },
+]
+
+[[package]]
 name = "rich"
 version = "15.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1167,6 +1216,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/08/a3/84e821cc54b4ab50ae6dbc6ac3800a651b65ec35f045cc73785380654057/starlette-1.0.1.tar.gz", hash = "sha256:512399c5f1de7fac99c88572212ded9ddeddef2fb32afa82d724000e88b38f4f", size = 2659596, upload-time = "2026-05-21T21:58:58.433Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/ec/e1/b2df4bc09a1e51ff664c1e17018a4274b42e5e9352e4a478ea540512dc88/starlette-1.0.1-py3-none-any.whl", hash = "sha256:7c0e69b2ee1c848bd54669d908500117a3ee13de603a21427e5c6fc1adf98dcd", size = 72802, upload-time = "2026-05-21T21:58:56.551Z" },
+]
+
+[[package]]
+name = "tldextract"
+version = "5.3.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "filelock" },
+    { name = "idna" },
+    { name = "requests" },
+    { name = "requests-file" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/65/7b/644fbbb49564a6cb124a8582013315a41148dba2f72209bba14a84242bf0/tldextract-5.3.1.tar.gz", hash = "sha256:a72756ca170b2510315076383ea2993478f7da6f897eef1f4a5400735d5057fb", size = 126105, upload-time = "2025-12-28T23:58:05.532Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6d/42/0e49d6d0aac449ca71952ec5bae764af009754fcb2e76a5cc097543747b3/tldextract-5.3.1-py3-none-any.whl", hash = "sha256:6bfe36d518de569c572062b788e16a659ccaceffc486d243af0484e8ecf432d9", size = 105886, upload-time = "2025-12-28T23:58:04.071Z" },
 ]
 
 [[package]]
@@ -1353,6 +1417,7 @@ name = "website-parsing-service"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "brightdata-sdk" },
     { name = "fastapi", extra = ["standard"] },
     { name = "firecrawl-py" },
     { name = "nltk" },
@@ -1361,6 +1426,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "brightdata-sdk", specifier = ">=2.3.1" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.136.1" },
     { name = "firecrawl-py", specifier = ">=1.15.0" },
     { name = "nltk", specifier = ">=3.9.4" },
