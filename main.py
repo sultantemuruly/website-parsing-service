@@ -3,7 +3,7 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from crawl import crawl_site, scrape_page
+from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
 from chunking import chunk_nlp_sentence
 
 app = FastAPI()
@@ -80,7 +80,7 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     failures: list[dict[str, Any]] = []
 
     try:
-        for page in await crawl_site(url):
+        for page in await crawl_site(url, limit=MAX_CRAWL_PAGES):
             try:
                 pages.append(serialize_page(page))
             except ValueError as e:
