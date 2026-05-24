@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
-from chunking import chunk_nlp_sentence
+from chunking import chunk_markdown
 from social_platforms import (
     scrape_facebook_url,
     scrape_instagram_url,
@@ -133,7 +133,7 @@ def chunk(text: str) -> list[str]:
     if not text.strip():
         raise HTTPException(status_code=400, detail="Text is required")
     try:
-        return chunk_nlp_sentence(text)
+        return chunk_markdown(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
  

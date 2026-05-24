@@ -1,56 +1,174 @@
-from nltk.tokenize import sent_tokenize, TextTilingTokenizer
+"""Chunk crawled markdown for RAG via recursive character splitting."""
 
-class NlpSentenceChunking:
-    def chunk(self, text):
-        sentences = sent_tokenize(text)
-        return [sentence.strip() for sentence in sentences]
+from functools import lru_cache
 
-class TopicSegmentationChunking:
-    def __init__(self):
-        self.tokenizer = TextTilingTokenizer()
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-    def chunk(self, text):
-        return self.tokenizer.tokenize(text)
+# Firecrawl RAG guide defaults: https://www.firecrawl.dev/blog/best-chunking-strategies-rag
+CHUNK_SIZE = 512
+CHUNK_OVERLAP = 50
+MARKDOWN_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]
 
-class SlidingWindowChunking:
-    def __init__(self, window_size=100, step=50):
-        self.window_size = window_size
-        self.step = step
 
-    def chunk(self, text):
-        words = text.split()
-        chunks = []
-        for i in range(0, len(words) - self.window_size + 1, self.step):
-            chunks.append(' '.join(words[i:i + self.window_size]))
-        return chunks
+@lru_cache(maxsize=1)
+def _splitter() -> RecursiveCharacterTextSplitter:
+    return RecursiveCharacterTextSplitter(
+        chunk_size=CHUNK_SIZE,
+        chunk_overlap=CHUNK_OVERLAP,
+        length_function=len,
+        separators=MARKDOWN_SEPARATORS,
+    )
 
-def chunk_nlp_sentence(text: str) -> list[str]:
-    chunker = NlpSentenceChunking()
-    chunks = chunker.chunk(text)
-    return chunks
 
-def chunk_topic_segmentation(text):
-    chunker = TopicSegmentationChunking()
-    chunks = chunker.chunk(text)
-    return chunks
+def chunk_markdown(text: str) -> list[str]:
+    """Split markdown into overlapping chunks at paragraph, line, and sentence boundaries."""
+    stripped = text.strip()
+    if not stripped:
+        return []
+    return _splitter().split_text(stripped)
 
-def chunk_sliding_window(text):
-    chunker = SlidingWindowChunking()
-    chunks = chunker.chunk(text)
-    return chunks
 
-# # Example Usage
-# def main():
-#     text = """
-#     ![Alternate Text](https://kaspi.kz/img/main_logo.svg)\n![](https://kaspi.kz/img/externalImg/2025-phone-3x-n.png)\nСервисы Kaspi.kz \n[ Магазин  Покупки   \nв рассрочку   \nс бесплатной   \nдоставкой  ![](https://kaspi.kz/img/services/service-1.svg) Купить  ](https://kaspi.kz/shop) [ Travel  Авиа и ЖД   \nБилеты   \nпо выгодным   \nценам  ![](https://kaspi.kz/img/services/travel-v2.svg) Купить билеты  ](https://kaspi.kz/kaspitravel) [ Переводы  Без комиссий   \nна Kaspi Gold  ![](https://kaspi.kz/img/services/transfers.svg) Совершить перевод  ](https://kaspi.kz/transfers) Акции  Получайте   \nБонусы   \nи покупайте   \nв рассрочку  ![](https://kaspi.kz/img/services/actions.svg) Узнать об акциях  [ Платежи  Без комиссий,   \nболее 10 000 услуг  ![](https://kaspi.kz/img/services/payments.svg) Оплатить услуги  ](https://kaspi.kz/payments) Объявления  Бесплатные объявления товаров и услуг  ![](https://kaspi.kz/img/services/ads.svg) Подать объявление  Мой Банк  Kaspi Red,   \nДепозиты   \nи кредиты   \nонлайн  ![](https://kaspi.kz/img/services/mybank.svg) Перейти в Мой Банк  Госуслуги  Оформления   \nонлайн, без   \nвизита в ЦОН  ![](https://kaspi.kz/img/services/govservice.svg) Оформить  [ Гид  Расскажем всё   \nо продуктах   \nи сервисах  ![](https://kaspi.kz/img/services/guide.svg) Узнать  ](https://guide.kaspi.kz/client/ru) [ Магазин  Покупки   \nв рассрочку   \nс бесплатной   \nдоставкой  ![](https://kaspi.kz/img/services/service-1.svg) Купить  ](https://kaspi.kz/shop) [ Travel  Авиа и ЖД   \nБилеты   \nпо выгодным   \nценам  ![](https://kaspi.kz/img/services/travel-v2.svg) Купить билеты  ](https://kaspi.kz/kaspitravel) [ Переводы  Без комиссий   \nна Kaspi Gold  ![](https://kaspi.kz/img/services/transfers.svg) Совершить перевод  ](https://kaspi.kz/transfers) Акции  Получайте   \nБонусы   \nи покупайте   \nв рассрочку  ![](https://kaspi.kz/img/services/actions.svg) Узнать об акциях  [ Платежи  Без комиссий,   \nболее 10 000 услуг  ![](https://kaspi.kz/img/services/payments.svg) Оплатить услуги  ](https://kaspi.kz/payments) Объявления  Бесплатные объявления товаров и услуг  ![](https://kaspi.kz/img/services/ads.svg) Подать объявление  Мой Банк  Kaspi Red,   \nДепозиты   \nи кредиты   \nонлайн  ![](https://kaspi.kz/img/services/transfers.svg) Перейти в Мой Банк  Госуслуги  Оформления   \nонлайн, без   \nвизита в ЦОН  ![](https://kaspi.kz/img/services/transfers.svg) Оформить  [ Гид  Расскажем всё   \nо продуктах   \nи сервисах  ![](https://kaspi.kz/img/services/guide.svg) Узнать  ](https://guide.kaspi.kz/client/ru)\nИнтернет-магазин на Kaspi.kz \n[ Телефоны,   \nгаджеты  ![](https://kaspi.kz/img/externalImg/Phone.png) ](https://kaspi.kz/shop/c/smartphones%20and%20gadgets/?source=kaspikz) [ Компьютеры  ![](https://kaspi.kz/img/externalImg/Computer.png) ](https://kaspi.kz/shop/c/computers/?source=kaspikz) [ Обувь  ![](https://kaspi.kz/img/externalImg/Shoes1.png) ](https://kaspi.kz/shop/c/shoes/?source=kaspikz) [ Одежда  ![](https://kaspi.kz/img/externalImg/Clothes1.png) ](https://kaspi.kz/shop/c/fashion/?source=kaspikz) [ Украшения  ![](https://kaspi.kz/img/externalImg/Jewelry.png) ](https://kaspi.kz/shop/c/jewelry%20and%20bijouterie/all/?source=kaspikz) [ Спорт,   \nтуризм  ![](https://kaspi.kz/img/externalImg/Sport1.png) ](https://kaspi.kz/shop/c/sports%20and%20outdoors/?source=kaspikz) [ Красота,   \nздоровье  ![](https://kaspi.kz/img/externalImg/Beauty1.png) ](https://kaspi.kz/shop/c/beauty%20care/?source=kaspikz) [ Товары для   \nживотных  ![](https://kaspi.kz/img/externalImg/Animals.png) ](https://kaspi.kz/shop/c/pet%20goods/?source=kaspikz) [ Подарки, товары   \nдля праздников  ![](https://kaspi.kz/img/externalImg/Holidays.png) ](https://kaspi.kz/shop/c/gifts%20and%20party%20supplies/?source=kaspikz) [ ТВ, Аудио,   \nВидео  ![](https://kaspi.kz/img/externalImg/TV.png) ](https://kaspi.kz/shop/c/tv_audio/?source=kaspikz)\n[ Автотовары  ![](https://kaspi.kz/img/externalImg/Avto.png) ](https://kaspi.kz/shop/c/car%20goods/?source=kaspikz) [ Мебель  ![](https://kaspi.kz/img/externalImg/Furniture1.png) ](https://kaspi.kz/shop/c/furniture/?source=kaspikz) [ Супермаркеты  ![](https://kaspi.kz/img/externalImg/Grocery.png) ](https://kaspi.kz/shop/c/food/?source=kaspikz) [ Строительство, ремонт  ![](https://kaspi.kz/img/externalImg/Hard.png) ](https://kaspi.kz/shop/c/construction%20and%20repair/?source=kaspikz) [ Аптеки  ![](https://kaspi.kz/img/externalImg/Pharmcy.png) ](https://kaspi.kz/shop/c/pharmacy/?source=kaspikz) [ Досуг, книги  ![](https://kaspi.kz/img/externalImg/Hobby.png) ](https://kaspi.kz/shop/c/leisure/?source=kaspikz) [ Канцелярские товары  ![](https://kaspi.kz/img/externalImg/Stat.png) ](https://kaspi.kz/shop/c/office%20and%20school%20supplies/?source=kaspikz) [ Товары для дома и дачи  ![](https://kaspi.kz/img/externalImg/Home.png) ](https://kaspi.kz/shop/c/home/?source=kaspikz) [ Детские товары  ![](https://kaspi.kz/img/externalImg/Kids.png) ](https://kaspi.kz/shop/c/child%20goods/?source=kaspikz) [ Бытовая техника  ![](https://kaspi.kz/img/externalImg/HomeApp.png) ](https://kaspi.kz/shop/c/home%20equipment/?source=kaspikz)\n[ Аксессуары  ![](https://kaspi.kz/img/externalImg/Accessories.png) ](https://kaspi.kz/shop/c/fashion%20accessories/all/?source=kaspikz) Акции  ![](https://kaspi.kz/img/externalImg/Gifts1.png)\nПродукты Kaspi.kz \n[ Kaspi Gold  Переводы,   \nплатежи, снятия   \nбез комиссий  ![](https://kaspi.kz/img/gold.svg) Открыть Kaspi Gold онлайн  ](https://kaspi.kz/gold) [ Kaspi Red+  Покупки в рассрочку 0%   \nв магазинах Вашего   \nгорода  ![](https://kaspi.kz/img/red.svg) Открыть Kaspi Red+ онлайн  ](https://kaspi.kz/kaspired) [ Kaspi Gold для ребенка  Деньги на карманные   \nрасходы и контроль   \nтрат  ![](https://kaspi.kz/img/gold.svg) Открыть Kaspi Gold для ребенка  ](https://kaspi.kz/goldkid) [ Кредит на Покупки  Кредит или   \nрассрочка 0%.   \nОдобрение за 1 минуту.  ![](https://kaspi.kz/img/kredit.svg) Оформить Кредит на Покупки  ](https://kaspi.kz/purchase) [ Kaspi Депозит  Снятия и пополнения   \nбез комиссий. Сумма   \nдепозита от 1 000 ₸.  ![](https://kaspi.kz/img/deposit.svg) Открыть Kaspi Депозит  ](https://kaspi.kz/deposit) [ Кредит Наличными  Одобрение онлайн за   \n1 минуту. До 2,2 млн ₸ на Kaspi Gold.  ![](https://kaspi.kz/img/KN.svg) Получить Кредит Наличными  ](https://kaspi.kz/cashkredit) [ Накопительный Депозит  Высокая ставка.   \nВыплата процентов   \nкаждый месяц.  ![](https://kaspi.kz/img/save_deposit.svg) Открыть Накопительный Депозит  ](https://kaspi.kz/savedeposit) [ Кредит для ИП  До 5 млн тенге.   \nБез залога   \nи документов.  ![](https://kaspi.kz/img/KN_entrep.svg) Оформить Кредит для ИП  ](https://kaspi.kz/cashkreditbiz)\nДля Бизнеса \n![](https://kaspi.kz/img/kaspipay_icon.svg)\nKaspi Pay. Приложение   \nдля бизнеса\nПринимайте оплату с \n![](https://kaspi.kz/img/gold.svg) ![](https://kaspi.kz/img/red.svg) ![](https://kaspi.kz/img/kredit.svg)\n[Подключиться](https://kaspi.kz/kaspipay)\n![](https://kaspi.kz/img/new-entrep-phone-3x.png)\n[ Бизнес Кредит Без залога   \nи документов.   \nОнлайн за 1 минуту  ![](https://kaspi.kz/img/business.svg) Подробнее  ](https://kaspi.kz/bizkredit) [ Акции Kaspi QR Участвуйте в акциях   \nи увеличивайте свои   \nпродажи  ![](https://kaspi.kz/img/actions-sales.svg) Принять участие  ](https://kaspi.kz/marketingactions)\nПринимайте оплату с Kaspi Pay \n![](https://kaspi.kz/img/pos-QR-3x.png)\nSmart POS \n![](https://kaspi.kz/img/mobile-QR-3x.png)\nМобильный POS \n![](https://kaspi.kz/img/display-QR-3x.png)\nQR Дисплей \n[ Принимать оплату с Kaspi Pay ](https://kaspi.kz/kaspipay)\nСтать Партнером \nПродавать   \nв Интернет-магазине   \nна Kaspi.kz \n![](https://kaspi.kz/img/cart.svg)\nБолее 14 млн покупателей,   \nдоставка товаров по всему Казахстану,   \nвозможность продавать в кредит и рассрочку. \n[ Начать продавать в Интернет-магазине ](https://kaspi.kz/shop/merchant/registration/#!/landing)\nПродавать   \nс Kaspi Pay \n![](https://kaspi.kz/img/kaspipay_icon.svg)\nПринимайте оплату с Kaspi Gold, Red+ и Kredit. Откройте счет онлайн бесплатно   \nи получите мобильный POS за 5 минут. \n[ Начать продавать с Kaspi Pay ](https://kaspi.kz/kaspipay)\nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/qr-main-v2.svg)\nМой Банк доступен в мобильном приложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/qr-link-bank-v1.svg)\nОформить Госуслуги   \nВы можете в мобильном приложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/qr-link-gos-v1.svg)\nУзнать об акциях   \nВы можете в мобильном приложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/qr-link-actions-v1.svg)\nПодать объявление,   \nискать товары и услуги   \nвы можете в мобильном   \nприложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/gr-link-obyavleniya.svg)\nНайти отделения  \nВы можете в мобильном  \nприложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/qr-offices-map.png)\nОткрыть Чат с Kaspi Гид   \nВы можете в мобильном   \nприложении Kaspi.kz \nСканируйте, чтобы перейти   \nв приложение Kaspi.kz \n![](https://kaspi.kz/img/QRs/chat-qr.svg)\n
-    
-# """
-#     chunker = NlpSentenceChunking()
-#     chunks = chunker.chunk(text)
-#     for chunk in chunks:
-#         print("--------------------------------")
-#         print(chunk)
-#     print(len(chunker.chunk(text)))
+SAMPLE_MARKDOWN = r"""
+    ---
+title: "The Ultimate Guide to Tech Stack Optimization - v2.4.1 (DEPRECATED)"
+seo_keywords: ["tech", "optimization", "clean code", "devops", "cloud"]
+author_id: 94812
+cache_status: "MISS"
+---
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "The Ultimate Guide to Tech Stack Optimization",
+  "datePublished": "2026-04-12"
+}
+</script>
+<style>
+.flex-container { display: flex; flex-direction: column; padding: 20px; }
+.hidden-mobile { display: none; }
+@media (max-width: 600px) { .ad-slot-300 { width: 100%; } }
+</style>
 
-# if __name__ == "__main__":
-#     main()
+<div id="react-root" class="theme--dark app-layout col-lg-12 col-md-12 col-sm-12 global-wrapper__overflow-x">
+  
+  <!-- UI NAVIGATION BANNER (SCRAPED INADVERTENTLY) -->
+  <header class="site-header fixed-top navbar-expand-lg navigation-widget__container">
+    <div class="hamburger-menu-icon" onclick="toggleMenu()"><span></span><span></span><span></span></div>
+    <a href="/?ref=nav_logo" class="tracking-link-analytics" data-analytics-id="logo_click_01">
+      <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAxMDAgMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0MCIgZmlsbD0icmVkIi8+PC9zdmc+" alt="Brand Logo Icon Inline Base64">
+    </a>
+    <span class="user-welcome-msg">Welcome, Guest! <a href="/login" class="btn btn-outline-light btn-sm login-trigger-modal">Sign In</a></span>
+  </header>
+
+  <main class="main-content-area grid-system-override layout-padding-large">
+    <section class="breadcrumbs-list-wrapper">
+      <ol class="breadcrumb" itemscope itemtype="https://schema.org">
+        <li class="breadcrumb-item" itemprop="itemListElement" itemscope itemtype="https://schema.org"><a href="/" itemprop="item"><span itemprop="name">Home</span></a><meta itemprop="position" content="1" /></li>
+        <li class="breadcrumb-item" itemprop="itemListElement" itemscope itemtype="https://schema.org"><a href="/blog" itemprop="item"><span itemprop="name">Resources</span></a><meta itemprop="position" content="2" /></li>
+        <li class="breadcrumb-item active" aria-current="page">Tech Stack</li>
+      </ol>
+    </section>
+
+    <!-- TRIPLE NESTED CONTENT WRAPPER -->
+    <div class="row match-height-container">
+      <div class="col-xl-8 col-lg-8 col-md-12 content-body-column-left-side">
+        <article class="journal-article-node-id-499211 node-published status-public user-role-anonymous">
+          
+          <header class="article-header-meta-block">
+            <h1 class="entry-title main-heading-hero font-weight-black text-uppercase tracking-tight" id="main-title-anchor">
+              The Ultimate Guide to Tech Stack Optimization &amp; Architecture Scaling&#8482;
+            </h1>
+            <div class="meta-authorship-grid text-muted small-text-variant">
+              <span class="author-label">Written by:</span> <a href="/authors/profile/alex-rivera?source=post_header" rel="author" class="link-underlined-hover">Alex Rivera, CTO</a>
+              <span class="bull-divider">&bull;</span>
+              <span class="publish-date-timestamp">Updated: <time datetime="2026-04-12T14:32:01Z">April 12, 2026 at 2:32 PM UTC</time></span>
+              <span class="bull-divider">&bull;</span>
+              <span class="reading-time-estimation"><i class="icon-clock-svg-wrapper"></i> 12 min read</span>
+            </div>
+          </header>
+
+          <hr class="section-divider-gradient-line">
+
+          <!-- INLINE NEWSLETTER CTA BREAKOUT -->
+          <div class="newsletter-inline-box-wrapper alert alert-info contextual-callout-border mb-4 card-shadow-sm" role="alert">
+            <div class="d-flex align-items-center justify-content-between layout-mobile-stack">
+              <p class="mb-0 text-dark-emphasis font-size-medium weight-600">🚀 Get architectural blueprints delivered directly to your inbox weekly!</p>
+              <form id="inline-subscribe-form" class="form-inline custom-form-validation-target" action="https://domain.com" method="POST">
+                <input type="hidden" name="form_id" value="blog_mid_post_cta">
+                <input type="email" required name="email_address" placeholder="enter email..." class="form-control form-control-sm mr-2 input-border-radius">
+                <button type="submit" class="btn btn-primary btn-sm submit-bounce-animation font-weight-bold">Join 50k+ Devs</button>
+              </form>
+            </div>
+          </div>
+
+          <!-- ACTUAL ARTICLE CONTENT BODY BODY -->
+          <div class="article-rich-text-content-wrapper dropcap-initialized paragraph-spacing-classic line-height-relaxed text-justified-mobile">
+            <p><span class="first-letter-dropcap text-primary font-weight-bold display-4 float-left mr-2 lh-1">M</span>odern software development requires strict adherence to lean design systems. When you build infrastructure, efficiency isn&rsquo;t just a nice feature to have; it&rsquo;s absolute critical path operational bedrock. &nbsp; &nbsp; &nbsp; &nbsp; Many engineering teams fall trap to the dangerous allure of &ldquo;resume-driven development,&rdquo; which directly leads to massive tech-debt overhead accumulation.</p>
+
+            <div class="interstitial-ad-container-slot box-advertisement center-aligned mt-3 mb-3 border-top-bottom-gray">
+              <span class="ad-disclosure-text-label block-display text-muted text-center micro-text">ADVERTISEMENT</span>
+              <div id="div-gpt-ad-1672394-0" class="google-ad-unit-wrapper" style="min-width: 300px; min-height: 250px;">
+                <script>googletag.cmd.push(function() { googletag.display('div-gpt-ad-1672394-0'); });</script>
+              </div>
+            </div>
+
+            <h2 class="section-subtitle-heading-h2 sub-target-scroll-marker" id="h2-metrics-matter">1. Metrics That Matter &amp; KPI Trees</h2>
+            <p>To optimize efficiently, you must carefully monitor your telemetry pipelines. The core algorithmic constraint for continuous ingestion scaling is represented mathematically by the relationship formula shown down below:</p>
+            
+            <!-- LATEX MIXED WITH RAW INLINE STYLES AND UNPARSED SYMBOLS -->
+            <div class="equation-block-container mathematics-render-engine-katex style-center-margin" style="background: #f8f9fa; padding: 15px; border-left: 4px solid #007bff; font-family: monospace; overflow-x: auto;">
+              \[\lim_{n \to \infty} \sum_{i=1}^{n} \frac{\Delta T_{ingress} \times \mathcal{O}(log \, n)}{\psi \cdot \beta_{bandwidth}} \le \epsilon_{latency}\]
+            </div>
+            
+            <p>If your system baseline exceeds \(\epsilon_{latency}\), your message queuing queue broker (\(e.g.\), Apache Kafka, RabbitMQ) will quickly bottleneck, causing major downstream cascading database failures.</p>
+
+            <h3 class="nested-sub-heading-h3 text-secondary mt-4 mb-2" id="h3-data-structures">A. Recommended In-Memory Data Tier Setup</h3>
+            <p>We ran comprehensive comparative benchmarks across several operational environments. The resulting structural choice matrix can be clearly broken down into the following key points:</p>
+            
+            <!-- MIXED LIST WITH NESTED PARAGRAPHS, INLINE STYLES, SPANS AND CHOTIC MARKUP -->
+            <ul class="styled-bullet-points-custom-listfa margin-left-medium line-item-gap-small">
+              <li class="list-item-node-element unique-li-class-1">
+                <strong class="highlight-text-orange font-weight-semibold">Redis Cluster Architecture:</strong> Best option for fast sub-millisecond atomic key-value operations. 
+                <span class="badge text-bg-success software-version-tag">v7.2 Stable</span>
+                <p class="list-item-sub-description-text text-muted italic-font-style">Note: You absolutely must configure eviction policies to <code>volatile-lru</code> to prevent catastrophic memory exhaustion crashes.</p>
+              </li>
+              <li class="list-item-node-element unique-li-class-2">
+                <strong class="highlight-text-purple font-weight-semibold">Memcached Invalidation Tier:</strong> Highly effective for raw object block caching structures.
+                <div class="nested-warning-callout mt-1 p-2 bg-light-yellow border-left-warning small">
+                  <span class="warning-icon-placeholder">⚠️</span> <strong>Warning:</strong> Lacks out-of-the-box native cluster replication features.
+                </div>
+              </li>
+            </ul>
+
+            <h2 class="section-subtitle-heading-h2 sub-target-scroll-marker" id="h2-code-snippet">2. Production Implementation Reference</h2>
+            <p>Below is a working production code snippet that demonstrates asynchronous connection pool initialization handling routines:</p>
+
+            <!-- CODE BLOCK MIXED WITH SYNTAX HIGHLIGHTING HTML THAT SHOULD BE PURE MARKDOWN -->
+            <div class="code-block-syntax-highlighter-wrapper-element positioning-relative">
+              <div class="code-header-filename-bar d-flex justify-content-between p-2 bg-dark text-white font-monospace font-size-xs rounded-top">
+                <span>pool_manager.py</span>
+                <button class="btn-copy-to-clipboard-js-action btn-xs text-muted-white border-0 bg-transparent" data-clipboard-target="#code-snippet-data-id-9982"><i class="fa fa-copy"></i> Copy</button>
+              </div>
+              <pre class="bg-dark text-light p-3 font-monospace font-size-sm rounded-bottom unified-syntax-coloring" id="code-snippet-data-id-9982"><code><span class="python-keyword" style="color: #ff79c6;">import</span> asyncio
+<span class="python-keyword" style="color: #ff79c6;">import</span> aioredis
+
+
+"""
+
+
+def _demo() -> None:
+    text = SAMPLE_MARKDOWN.strip()
+    chunks = chunk_markdown(text)
+    sizes = [len(c) for c in chunks]
+
+    print(f"input: {len(text)} chars")
+    print(f"chunks: {len(chunks)} (avg {sum(sizes) // len(sizes) if sizes else 0} chars)\n")
+
+    for i, chunk in enumerate(chunks, 1):
+        print(f"--- chunk {i} ({len(chunk)} chars) ---")
+        print(chunk[:200] + ("..." if len(chunk) > 200 else ""))
+        print()
+
+
+if __name__ == "__main__":
+    _demo()
