@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
 from chunking import chunk_nlp_sentence
+from social_platforms import (
+    scrape_facebook_url,
+    scrape_instagram_url,
+    scrape_linkedin_url,
+)
 
 app = FastAPI()
 
@@ -95,6 +100,34 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     return {"partial": bool(failures), "pages": pages, "failures": failures}
 
 
+async def _social_endpoint(url: str, scrape) -> dict[str, Any]:
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    try:
+        return {"url": url, "data": await scrape(url)}
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/linkedin")
+async def linkedin(url: str) -> dict[str, Any]:
+    return await _social_endpoint(url, scrape_linkedin_url)
+
+
+@app.post("/instagram")
+async def instagram(url: str) -> dict[str, Any]:
+    return await _social_endpoint(url, scrape_instagram_url)
+
+
+@app.post("/facebook")
+async def facebook(url: str) -> dict[str, Any]:
+    return await _social_endpoint(url, scrape_facebook_url)
+
+
 @app.post("/chunk")
 def chunk(text: str) -> list[str]:
     if not text.strip():
@@ -103,3 +136,4 @@ def chunk(text: str) -> list[str]:
         return chunk_nlp_sentence(text)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+ 
