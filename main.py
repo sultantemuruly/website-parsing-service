@@ -31,12 +31,17 @@ def _metadata_dict(metadata) -> dict[str, Any]:
     return {k: v for k, v in vars(metadata).items() if v is not None}
 
 
+def _page_url(metadata) -> str:
+    md = _metadata_dict(metadata)
+    return md.get("source_url") or md.get("sourceURL", "")
+
+
 def serialize_page(page) -> dict[str, Any]:
     if not page.markdown:
         raise ValueError("No markdown content for page")
     metadata = _metadata_dict(page.metadata)
     return {
-        "url": metadata.get("sourceURL", ""),
+        "url": _page_url(page.metadata),
         "markdown": page.markdown,
         "metadata": metadata,
     }
@@ -85,7 +90,7 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
                 pages.append(serialize_page(page))
             except ValueError as e:
                 failures.append({
-                    "url": _metadata_dict(page.metadata).get("sourceURL", ""),
+                    "url": _page_url(page.metadata),
                     "error": str(e),
                 })
     except Exception as e:

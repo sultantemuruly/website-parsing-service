@@ -12,17 +12,19 @@ _client = AsyncFirecrawl(api_key=fc_api_key)
 
 MAX_CRAWL_PAGES = 100
 
-_CRAWL_PARAMS = {
-    "maxDepth": 2,
-    "scrapeOptions": {"formats": ["markdown"]},
-}
-
 
 async def scrape_page(url: str):
     return await _client.scrape(url, formats=["markdown"])
 
 
 async def crawl_site(url: str, *, limit: int = MAX_CRAWL_PAGES) -> list:
-    params = {**_CRAWL_PARAMS, "limit": min(limit, MAX_CRAWL_PAGES)}
-    result = await _client.crawl_url(url, params=params)
-    return result.data if hasattr(result, "data") else result
+    capped_limit = min(max(limit, 1), MAX_CRAWL_PAGES)
+
+    result = await _client.crawl(
+        url=url,
+        limit=capped_limit,
+        max_discovery_depth=2,
+        scrape_options={"formats": ["markdown"]},
+    )
+
+    return result.data
