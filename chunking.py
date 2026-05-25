@@ -44,28 +44,24 @@ def chunk_markdown_safe(text: str) -> list[str]:
 
 
 def build_rag_chunks(
-    markdown: str,
+    text: str,
     *,
     source_url: str,
-    title: str | None = None,
-    language: str | None = None,
-    site_seed_url: str | None = None,
+    content_type: str = "web_page",
+    **metadata_fields: Any,
 ) -> list[dict[str, Any]]:
-    """Split markdown and attach self-contained metadata for vector-store ingest."""
+    """Split text and attach self-contained metadata for vector-store ingest."""
     chunks: list[dict[str, Any]] = []
-    for index, text in enumerate(chunk_markdown_safe(markdown)):
+    for index, chunk_text in enumerate(chunk_markdown_safe(text)):
         metadata: dict[str, Any] = {
             "source_url": source_url,
-            "content_type": "web_page",
+            "content_type": content_type,
             "chunk_index": index,
         }
-        if title:
-            metadata["title"] = title
-        if language:
-            metadata["language"] = language
-        if site_seed_url:
-            metadata["site_seed_url"] = site_seed_url
-        chunks.append({"text": text, "metadata": metadata})
+        for key, value in metadata_fields.items():
+            if value is not None:
+                metadata[key] = value
+        chunks.append({"text": chunk_text, "metadata": metadata})
     return chunks
 
 

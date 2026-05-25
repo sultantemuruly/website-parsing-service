@@ -5,6 +5,13 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
 from chunking import build_rag_chunks, chunk_markdown_safe
+from social_normalize import (
+    ScrapeContext,
+    extract_records,
+    primary_record_type,
+    records_to_chunks,
+    top_level_metadata,
+)
 from social_platforms import (
     scrape_facebook_url,
     scrape_instagram_url,
@@ -128,11 +135,27 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     }
 
 
+def serialize_social(ctx: ScrapeContext) -> dict[str, Any]:
+    records = extract_records(ctx)
+    chunks = records_to_chunks(records, ctx.platform)
+    if not chunks:
+        raise ValueError("No content extracted")
+
+    return {
+        "url": ctx.request_url,
+        "platform": ctx.platform,
+        "record_type": primary_record_type(ctx),
+        "metadata": top_level_metadata(records, ctx),
+        "raw": ctx.raw,
+        "chunks": chunks,
+    }
+
+
 async def _social_endpoint(url: str, scrape) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return {"url": url, "data": await scrape(url)}
+        return serialize_social(await scrape(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except RuntimeError as e:
