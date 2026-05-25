@@ -23,6 +23,9 @@ PRIMARY_RECORD_TYPE: dict[tuple[str, str], str] = {
     ("facebook", "reels"): "reel",
 }
 
+# Nested arrays on a container payload (profile, page, company) → post records.
+NESTED_POST_FIELDS = ("posts", "activity")
+
 
 @dataclass(frozen=True)
 class ScrapeContext:
@@ -73,6 +76,28 @@ def record_url(request_url: str, item: dict[str, Any]) -> str:
     return first_str(item, "url", "input_url", "post_url", "link") or request_url
 
 
+def _append_kv_record(
+    records: list[SocialRecord],
+    *,
+    request_url: str,
+    item: dict[str, Any],
+    fields: dict[str, str | None],
+    record_type: str,
+    extra_metadata: dict[str, Any] | None = None,
+) -> None:
+    text = kv_lines(fields)
+    if not text:
+        return
+    records.append(
+        SocialRecord(
+            text=text,
+            record_type=record_type,
+            source_url=record_url(request_url, item),
+            extra_metadata=extra_metadata or {},
+        )
+    )
+
+
 def _append_post_records(
     records: list[SocialRecord],
     *,
@@ -103,67 +128,79 @@ def _append_post_records(
         )
 
 
+def _append_nested_posts(
+    records: list[SocialRecord],
+    *,
+    request_url: str,
+    item: dict[str, Any],
+    fields: tuple[str, ...] = NESTED_POST_FIELDS,
+    record_type: str = "post",
+) -> None:
+    for field in fields:
+        nested = item.get(field)
+        if not isinstance(nested, list):
+            continue
+        _append_post_records(
+            records,
+            request_url=request_url,
+            items=nested,
+            parent_field=field,
+            record_type=record_type,
+        )
+
+
 def extract_linkedin_profile(request_url: str, items: list[dict[str, Any]]) -> list[SocialRecord]:
     records: list[SocialRecord] = []
     for item in items:
-        profile_text = kv_lines({
-            "name": first_str(item, "name", "full_name"),
-            "headline": first_str(item, "headline", "position", "title"),
-            "about": first_str(item, "about", "summary"),
-            "location": first_str(item, "location", "city", "country_code"),
-        })
-        if profile_text:
-            records.append(
-                SocialRecord(
-                    text=profile_text,
-                    record_type="profile",
-                    source_url=record_url(request_url, item),
-                )
-            )
+        _append_kv_record(
+            records,
+            request_url=request_url,
+            item=item,
+            fields={
+                "name": first_str(item, "name", "full_name"),
+                "headline": first_str(item, "headline", "position", "title"),
+                "about": first_str(item, "about", "summary"),
+                "location": first_str(item, "location", "city", "country_code"),
+            },
+            record_type="profile",
+        )
 
         for index, exp in enumerate(item.get("experience") or []):
             if not isinstance(exp, dict):
                 continue
-            text = kv_lines({
-                "title": first_str(exp, "title", "position"),
-                "company": first_str(exp, "company", "company_name"),
-                "location": first_str(exp, "location"),
-                "description": first_str(exp, "description", "summary"),
-                "dates": first_str(exp, "duration", "date_range", "start_date"),
-            })
-            if not text:
-                continue
-            records.append(
-                SocialRecord(
-                    text=text,
-                    record_type="experience",
-                    source_url=record_url(request_url, item),
-                    extra_metadata={"parent_field": "experience", "parent_index": index},
-                )
+            _append_kv_record(
+                records,
+                request_url=request_url,
+                item=item,
+                fields={
+                    "title": first_str(exp, "title", "position"),
+                    "company": first_str(exp, "company", "company_name"),
+                    "location": first_str(exp, "location"),
+                    "description": first_str(exp, "description", "summary"),
+                    "dates": first_str(exp, "duration", "date_range", "start_date"),
+                },
+                record_type="experience",
+                extra_metadata={"parent_field": "experience", "parent_index": index},
             )
 
         for index, edu in enumerate(item.get("education") or []):
             if not isinstance(edu, dict):
                 continue
-            text = kv_lines({
-                "school": first_str(edu, "school", "title", "institution"),
-                "degree": first_str(edu, "degree", "degree_name"),
-                "field": first_str(edu, "field", "field_of_study"),
-                "dates": first_str(edu, "duration", "date_range", "start_date"),
-            })
-            if not text:
-                continue
-            records.append(
-                SocialRecord(
-                    text=text,
-                    record_type="education",
-                    source_url=record_url(request_url, item),
-                    extra_metadata={"parent_field": "education", "parent_index": index},
-                )
+            _append_kv_record(
+                records,
+                request_url=request_url,
+                item=item,
+                fields={
+                    "school": first_str(edu, "school", "title", "institution"),
+                    "degree": first_str(edu, "degree", "degree_name"),
+                    "field": first_str(edu, "field", "field_of_study"),
+                    "dates": first_str(edu, "duration", "date_range", "start_date"),
+                },
+                record_type="education",
+                extra_metadata={"parent_field": "education", "parent_index": index},
             )
 
-        _append_post_records(records, request_url=request_url, items=item.get("posts") or [], parent_field="posts")
-        _append_post_records(records, request_url=request_url, items=item.get("activity") or [], parent_field="activity")
+        _append_nested_posts(records, request_url=request_url, item=item)
 
     return records
 
@@ -178,44 +215,42 @@ def extract_linkedin_company(request_url: str, items: list[dict[str, Any]]) -> l
             if names:
                 specialty_text = ", ".join(names)
 
-        text = kv_lines({
-            "name": first_str(item, "name"),
-            "about": first_str(item, "about", "description"),
-            "slogan": first_str(item, "slogan"),
-            "industry": first_str(item, "industries", "industry"),
-            "headquarters": first_str(item, "headquarters"),
-            "company_size": first_str(item, "company_size"),
-            "organization_type": first_str(item, "organization_type"),
-            "specialties": specialty_text,
-        })
-        if text:
-            records.append(
-                SocialRecord(
-                    text=text,
-                    record_type="company",
-                    source_url=record_url(request_url, item),
-                )
-            )
+        _append_kv_record(
+            records,
+            request_url=request_url,
+            item=item,
+            fields={
+                "name": first_str(item, "name"),
+                "about": first_str(item, "about", "description"),
+                "slogan": first_str(item, "slogan"),
+                "industry": first_str(item, "industries", "industry"),
+                "headquarters": first_str(item, "headquarters"),
+                "company_size": first_str(item, "company_size"),
+                "organization_type": first_str(item, "organization_type"),
+                "specialties": specialty_text,
+            },
+            record_type="company",
+        )
+        _append_nested_posts(records, request_url=request_url, item=item, fields=("posts",))
+
     return records
 
 
 def extract_linkedin_job(request_url: str, items: list[dict[str, Any]]) -> list[SocialRecord]:
     records: list[SocialRecord] = []
     for item in items:
-        text = kv_lines({
-            "title": first_str(item, "title", "job_title", "position"),
-            "company": first_str(item, "company", "company_name"),
-            "location": first_str(item, "location", "job_location"),
-            "description": first_str(item, "description", "job_description", "about"),
-        })
-        if text:
-            records.append(
-                SocialRecord(
-                    text=text,
-                    record_type="job",
-                    source_url=record_url(request_url, item),
-                )
-            )
+        _append_kv_record(
+            records,
+            request_url=request_url,
+            item=item,
+            fields={
+                "title": first_str(item, "title", "job_title", "position"),
+                "company": first_str(item, "company", "company_name"),
+                "location": first_str(item, "location", "job_location"),
+                "description": first_str(item, "description", "job_description", "about"),
+            },
+            record_type="job",
+        )
     return records
 
 
@@ -228,20 +263,22 @@ def extract_linkedin_post(request_url: str, items: list[dict[str, Any]]) -> list
 def extract_instagram_profile(request_url: str, items: list[dict[str, Any]]) -> list[SocialRecord]:
     records: list[SocialRecord] = []
     for item in items:
-        text = kv_lines({
-            "name": first_str(item, "full_name", "name"),
-            "username": first_str(item, "username", "user_name"),
-            "bio": first_str(item, "biography", "bio", "about"),
-            "category": first_str(item, "category", "business_category"),
-        })
-        if text:
-            records.append(
-                SocialRecord(
-                    text=text,
-                    record_type="profile",
-                    source_url=record_url(request_url, item),
-                )
-            )
+        _append_kv_record(
+            records,
+            request_url=request_url,
+            item=item,
+            fields={
+                "name": first_str(item, "full_name", "profile_name", "name"),
+                "username": first_str(item, "account", "username", "user_name"),
+                "bio": first_str(item, "biography", "bio", "about"),
+                "category": first_str(
+                    item, "category", "business_category", "business_category_name", "category_name"
+                ),
+            },
+            record_type="profile",
+        )
+        _append_nested_posts(records, request_url=request_url, item=item, fields=("posts",))
+
     return records
 
 
@@ -259,7 +296,34 @@ def extract_instagram_reel(request_url: str, items: list[dict[str, Any]]) -> lis
 
 def extract_facebook_posts(request_url: str, items: list[dict[str, Any]]) -> list[SocialRecord]:
     records: list[SocialRecord] = []
-    _append_post_records(records, request_url=request_url, items=items, parent_field="posts", record_type="post")
+    for item in items:
+        posts = item.get("posts")
+        if isinstance(posts, list) and posts:
+            _append_kv_record(
+                records,
+                request_url=request_url,
+                item=item,
+                fields={
+                    "name": first_str(item, "name", "page_name", "title"),
+                    "about": first_str(item, "about", "description", "bio"),
+                },
+                record_type="page",
+            )
+            _append_post_records(
+                records,
+                request_url=request_url,
+                items=posts,
+                parent_field="posts",
+                record_type="post",
+            )
+        else:
+            _append_post_records(
+                records,
+                request_url=request_url,
+                items=[item],
+                parent_field="posts",
+                record_type="post",
+            )
     return records
 
 

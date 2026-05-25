@@ -13,3 +13,6 @@ wheels/
 
 # Playwright browser binaries (installed during Render build)
 .playwright-browsers/
+
+# Local test payloads (copy from tests/fixtures.example/)
+tests/fixtures/

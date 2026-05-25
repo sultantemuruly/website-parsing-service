@@ -1,0 +1,20 @@
+{
+  "account": "nuedukz",
+  "full_name": "Nazarbayev University",
+  "profile_name": "Nazarbayev University",
+  "biography": "Top university in Kazakhstan.",
+  "followers": 81077,
+  "url": "https://www.instagram.com/nuedukz/",
+  "posts": [
+    {
+      "caption": "First post caption about admissions.",
+      "id": "post-1",
+      "url": "https://www.instagram.com/p/ABC123"
+    },
+    {
+      "caption": "Second post about rankings.",
+      "id": "post-2",
+      "url": "https://www.instagram.com/p/DEF456"
+    }
+  ]
+}
