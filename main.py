@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
-from chunking import chunk_markdown_safe
+from chunking import build_rag_chunks, chunk_markdown_safe
 from social_platforms import (
     scrape_facebook_url,
     scrape_instagram_url,
@@ -35,16 +35,31 @@ def _page_url(metadata) -> str:
     return md.get("source_url") or md.get("sourceURL", "")
 
 
-def serialize_page(page) -> dict[str, Any]:
+def _normalize_page_metadata(raw: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for key in ("title", "language", "description"):
+        if value := raw.get(key):
+            out[key] = value
+    return out
+
+
+def serialize_page(page, *, site_seed_url: str | None = None) -> dict[str, Any]:
     if not page.markdown:
-        raise ValueError("No markdown content for page")
-    metadata = _metadata_dict(page.metadata)
-    markdown = page.markdown
+        raise ValueError("No markdown")
+    raw = _metadata_dict(page.metadata)
+    source_url = _page_url(page.metadata)
+    page_metadata = _normalize_page_metadata(raw)
     return {
-        "url": _page_url(page.metadata),
-        "markdown": markdown,
-        "markdown_chunks": chunk_markdown_safe(markdown),
-        "metadata": metadata,
+        "url": source_url,
+        "markdown": page.markdown,
+        "metadata": page_metadata,
+        "chunks": build_rag_chunks(
+            page.markdown,
+            source_url=source_url,
+            title=page_metadata.get("title"),
+            language=page_metadata.get("language"),
+            site_seed_url=site_seed_url,
+        ),
     }
 
 
@@ -70,7 +85,7 @@ async def crawl_site_endpoint(url: str) -> list[dict[str, Any]]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return [serialize_page(page) for page in await crawl_site(url)]
+        return [serialize_page(page, site_seed_url=url) for page in await crawl_site(url)]
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -88,7 +103,7 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     try:
         for page in await crawl_site(url, limit=MAX_CRAWL_PAGES):
             try:
-                pages.append(serialize_page(page))
+                pages.append(serialize_page(page, site_seed_url=url))
             except ValueError as e:
                 failures.append({
                     "url": _page_url(page.metadata),
@@ -96,10 +111,21 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
                 })
     except Exception as e:
         if pages or failures:
-            return {"partial": True, "pages": pages, "failures": failures, "error": str(e)}
+            return {
+                "partial": True,
+                "site_seed_url": url,
+                "pages": pages,
+                "failures": failures,
+                "error": str(e),
+            }
         raise HTTPException(status_code=500, detail=str(e))
 
-    return {"partial": bool(failures), "pages": pages, "failures": failures}
+    return {
+        "partial": bool(failures),
+        "site_seed_url": url,
+        "pages": pages,
+        "failures": failures,
+    }
 
 
 async def _social_endpoint(url: str, scrape) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 """Chunk crawled markdown for RAG via recursive character splitting."""
 
 from functools import lru_cache
+from typing import Any
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
@@ -40,6 +41,32 @@ def chunk_markdown_safe(text: str) -> list[str]:
     except Exception:
         pass
     return [stripped]
+
+
+def build_rag_chunks(
+    markdown: str,
+    *,
+    source_url: str,
+    title: str | None = None,
+    language: str | None = None,
+    site_seed_url: str | None = None,
+) -> list[dict[str, Any]]:
+    """Split markdown and attach self-contained metadata for vector-store ingest."""
+    chunks: list[dict[str, Any]] = []
+    for index, text in enumerate(chunk_markdown_safe(markdown)):
+        metadata: dict[str, Any] = {
+            "source_url": source_url,
+            "content_type": "web_page",
+            "chunk_index": index,
+        }
+        if title:
+            metadata["title"] = title
+        if language:
+            metadata["language"] = language
+        if site_seed_url:
+            metadata["site_seed_url"] = site_seed_url
+        chunks.append({"text": text, "metadata": metadata})
+    return chunks
 
 
 SAMPLE_MARKDOWN = """
