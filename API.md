@@ -4,7 +4,7 @@ FastAPI service for scraping websites (Firecrawl) and social profiles (Bright Da
 
 **Default base URL:** `http://localhost:8000` (see `start.sh` / `PORT` env)
 
-**CORS:** All origins, methods, and headers allowed.
+**CORS:** All origins, methods, and headers allowed.  (will change later)
 
 ---
 
