@@ -177,14 +177,3 @@ async def instagram(url: str) -> dict[str, Any]:
 @app.post("/facebook")
 async def facebook(url: str) -> dict[str, Any]:
     return await _social_endpoint(url, scrape_facebook_url)
-
-
-@app.post("/chunk")
-def chunk(text: str) -> list[str]:
-    if not text.strip():
-        raise HTTPException(status_code=400, detail="Text is required")
-    try:
-        return chunk_markdown_safe(text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
- 
