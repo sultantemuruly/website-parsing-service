@@ -13,6 +13,9 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY . .
 RUN uv sync --frozen --no-dev
 
+ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
+RUN uv run playwright install --with-deps chromium
+
 # NLTK data used by /chunk (sentence tokenization).
 RUN uv run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 

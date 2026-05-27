@@ -1,6 +1,6 @@
 # Website Parsing Service — API Reference
 
-FastAPI service for scraping websites (Firecrawl) and social profiles (Bright Data), with RAG-ready chunk output.
+FastAPI service for scraping websites (Crawl4AI) and social profiles (Bright Data), with RAG-ready chunk output.
 
 **Default base URL:** `http://localhost:8000` (see `start.sh` / `PORT` env)
 
@@ -117,7 +117,7 @@ Health check.
 
 ### `POST /crawl`
 
-Scrape a single URL to markdown (Firecrawl).
+Scrape a single URL to markdown (Crawl4AI / headless Chromium).
 
 | Query param | Required | Description |
 |-------------|----------|-------------|
@@ -255,6 +255,8 @@ Split arbitrary markdown/text into chunks (no scraping).
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `FC_API_KEY` | yes (crawl) | Firecrawl API key |
 | `BRIGHTDATA_API_TOKEN` | yes (social) | Bright Data API token |
 | `PORT` | no | Server port (default `8000`) |
+| `PLAYWRIGHT_BROWSERS_PATH` | no | Directory for Chromium binaries (set in Docker / `build.sh`) |
+
+Web crawl endpoints use local [Crawl4AI](https://github.com/unclecode/crawl4ai) with Playwright — no API key required. Run `build.sh` or the Docker build step to install Chromium before starting the server.

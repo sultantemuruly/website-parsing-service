@@ -5,7 +5,7 @@ from typing import Any
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-# Firecrawl RAG guide defaults: https://www.firecrawl.dev/blog/best-chunking-strategies-rag
+# RAG chunking defaults (512 chars, 50 overlap)
 CHUNK_SIZE = 512
 CHUNK_OVERLAP = 50
 MARKDOWN_SEPARATORS = ["\n\n", "\n", ". ", " ", ""]

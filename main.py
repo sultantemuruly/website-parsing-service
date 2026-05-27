@@ -1,9 +1,18 @@
+from contextlib import asynccontextmanager
 from typing import Any
 
+from crawl4ai import AsyncWebCrawler
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from crawl import MAX_CRAWL_PAGES, crawl_site, scrape_page
+from crawl import (
+    MAX_CRAWL_PAGES,
+    browser_config,
+    clear_crawler,
+    crawl_site,
+    init_crawler,
+    scrape_page,
+)
 from chunking import build_rag_chunks, chunk_markdown_safe
 from social_normalize import (
     ScrapeContext,
@@ -18,7 +27,17 @@ from social_platforms import (
     scrape_linkedin_url,
 )
 
-app = FastAPI()
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    async with AsyncWebCrawler(config=browser_config()) as crawler:
+        init_crawler(crawler)
+        try:
+            yield
+        finally:
+            clear_crawler()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
