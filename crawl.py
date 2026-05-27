@@ -91,14 +91,41 @@ async def scrape_page(url: str) -> CrawledPage:
     return page
 
 
-async def crawl_site(url: str, *, limit: int = MAX_CRAWL_PAGES) -> list[CrawledPage]:
+def _result_url(result: CrawlResult, fallback: str) -> str:
+    return result.url or fallback
+
+
+def _classify_site_result(
+    result: CrawlResult, seed_url: str
+) -> tuple[CrawledPage | None, dict[str, str] | None]:
+    page_url = _result_url(result, seed_url)
+    if not result.success:
+        return None, {"url": page_url, "error": result.error_message or "Crawl failed"}
+    if not _markdown_text(result).strip():
+        return None, {"url": page_url, "error": "No markdown"}
+    return result_to_page(result), None
+
+
+async def crawl_site_with_outcomes(
+    url: str, *, limit: int = MAX_CRAWL_PAGES
+) -> tuple[list[CrawledPage], list[dict[str, str]]]:
+    """Return successful pages and per-URL failures from a site crawl."""
     capped_limit = min(max(limit, 1), MAX_CRAWL_PAGES)
     results = await _require_crawler().arun(url, config=_site_crawl_config(capped_limit))
     if not isinstance(results, list):
         results = [results]
 
     pages: list[CrawledPage] = []
+    failures: list[dict[str, str]] = []
     for result in results:
-        if result.success and _markdown_text(result).strip():
-            pages.append(result_to_page(result))
+        page, failure = _classify_site_result(result, url)
+        if page is not None:
+            pages.append(page)
+        elif failure is not None:
+            failures.append(failure)
+    return pages, failures
+
+
+async def crawl_site(url: str, *, limit: int = MAX_CRAWL_PAGES) -> list[CrawledPage]:
+    pages, _ = await crawl_site_with_outcomes(url, limit=limit)
     return pages

@@ -1,7 +1,7 @@
 import unittest
 from types import SimpleNamespace
 
-from crawl import CrawledPage, result_to_page
+from crawl import CrawledPage, _classify_site_result, result_to_page
 
 
 def _make_result(**kwargs):
@@ -56,6 +56,32 @@ class ResultToPageTest(unittest.TestCase):
                 "title": "Only title",
             },
         )
+
+
+class ClassifySiteResultTest(unittest.TestCase):
+    def test_success_with_markdown(self):
+        page, failure = _classify_site_result(_make_result(), "https://example.com")
+
+        self.assertIsNotNone(page)
+        self.assertIsNone(failure)
+
+    def test_failed_crawl(self):
+        page, failure = _classify_site_result(
+            _make_result(success=False, error_message="Timeout"),
+            "https://example.com",
+        )
+
+        self.assertIsNone(page)
+        self.assertEqual(failure, {"url": "https://example.com/page", "error": "Timeout"})
+
+    def test_empty_markdown(self):
+        page, failure = _classify_site_result(
+            _make_result(markdown="  "),
+            "https://example.com",
+        )
+
+        self.assertIsNone(page)
+        self.assertEqual(failure["error"], "No markdown")
 
 
 if __name__ == "__main__":

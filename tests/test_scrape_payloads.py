@@ -159,5 +159,33 @@ class ScrapeEndpointTest(unittest.TestCase):
         self.assertNotIn("record_type", data)
 
 
+class PartialCrawlEndpointTest(unittest.TestCase):
+    def test_returns_pages_and_failures(self):
+        page = CrawledPage(
+            markdown="# OK",
+            metadata={"source_url": "https://example.com/ok"},
+        )
+        with patch(
+            "main.crawl_site_with_outcomes",
+            new=AsyncMock(
+                return_value=(
+                    [page],
+                    [{"url": "https://example.com/bad", "error": "No markdown"}],
+                ),
+            ),
+        ):
+            response = client.post("/crawl/site/partial?url=https://example.com")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data["partial"])
+        self.assertEqual(data["site_seed_url"], "https://example.com")
+        self.assertEqual(len(data["pages"]), 1)
+        self.assertEqual(data["pages"][0]["url"], "https://example.com/ok")
+        self.assertEqual(data["pages"][0]["site_seed_url"], "https://example.com")
+        self.assertEqual(len(data["failures"]), 1)
+        self.assertEqual(data["failures"][0]["error"], "No markdown")
+
+
 if __name__ == "__main__":
     unittest.main()

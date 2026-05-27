@@ -10,6 +10,7 @@ from crawl import (
     browser_config,
     clear_crawler,
     crawl_site,
+    crawl_site_with_outcomes,
     init_crawler,
     scrape_page,
 )
@@ -87,21 +88,12 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
 
-    pages: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-
     try:
-        for page in await crawl_site(url, limit=MAX_CRAWL_PAGES):
-            pages.append(crawl_page_payload(page, site_seed_url=url))
+        crawled_pages, failures = await crawl_site_with_outcomes(url, limit=MAX_CRAWL_PAGES)
+        pages = [
+            crawl_page_payload(page, site_seed_url=url) for page in crawled_pages
+        ]
     except Exception as e:
-        if pages or failures:
-            return {
-                "partial": True,
-                "site_seed_url": url,
-                "pages": pages,
-                "failures": failures,
-                "error": str(e),
-            }
         raise HTTPException(status_code=500, detail=str(e))
 
     return {
