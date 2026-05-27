@@ -16,7 +16,7 @@ RUN uv sync --frozen --no-dev
 ENV PLAYWRIGHT_BROWSERS_PATH=/app/.playwright-browsers
 RUN mkdir -p "$PLAYWRIGHT_BROWSERS_PATH" && uv run playwright install --with-deps chromium
 
-# NLTK data used by /chunk (sentence tokenization).
+# NLTK is listed as a project dependency.
 RUN uv run python -c "import nltk; nltk.download('punkt_tab', quiet=True)"
 
 ENV PATH="/app/.venv/bin:$PATH"

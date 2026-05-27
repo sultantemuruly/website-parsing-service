@@ -9,7 +9,7 @@ from social_normalize import (
     records_to_chunks,
     top_level_metadata,
 )
-from main import serialize_social
+from process import process_social_data
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -48,10 +48,11 @@ class LinkedInProfileNormalizeTest(unittest.TestCase):
         self.assertEqual(post_chunk["metadata"]["post_index"], 0)
         self.assertEqual(post_chunk["metadata"]["urn"], "urn:li:activity:1")
 
-    def test_serialize_social_response_shape(self):
-        response = serialize_social(self.ctx)
+    def test_process_social_response_shape(self):
+        response = process_social_data(self.ctx)
         self.assertEqual(response["url"], self.ctx.request_url)
         self.assertEqual(response["platform"], "linkedin")
+        self.assertEqual(response["scraper_type"], "profiles")
         self.assertEqual(response["record_type"], "profile")
         self.assertEqual(response["metadata"], {"title": "Jane Doe"})
         self.assertIs(response["raw"], self.ctx.raw)
@@ -126,8 +127,8 @@ class InstagramProfileNormalizeTest(unittest.TestCase):
             "https://www.instagram.com/p/ABC123",
         )
 
-    def test_serialize_includes_many_chunks(self):
-        response = serialize_social(self.ctx)
+    def test_process_includes_many_chunks(self):
+        response = process_social_data(self.ctx)
         self.assertEqual(response["record_type"], "profile")
         self.assertEqual(response["metadata"], {"title": "Nazarbayev University"})
         self.assertGreater(len(response["chunks"]), 1)

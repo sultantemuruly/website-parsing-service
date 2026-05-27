@@ -13,13 +13,14 @@ from crawl import (
     init_crawler,
     scrape_page,
 )
-from chunking import build_rag_chunks, chunk_markdown_safe
-from social_normalize import (
-    ScrapeContext,
-    extract_records,
-    primary_record_type,
-    records_to_chunks,
-    top_level_metadata,
+from process import (
+    ProcessPageRequest,
+    ProcessSocialRequest,
+    crawled_page_from_request,
+    page_url,
+    process_page_data,
+    process_social_data,
+    scrape_context_from_request,
 )
 from social_platforms import (
     scrape_facebook_url,
@@ -48,47 +49,6 @@ app.add_middleware(
 )
 
 
-def _metadata_dict(metadata) -> dict[str, Any]:
-    if metadata is None:
-        return {}
-    if isinstance(metadata, dict):
-        return metadata
-    return {k: v for k, v in vars(metadata).items() if v is not None}
-
-
-def _page_url(metadata) -> str:
-    md = _metadata_dict(metadata)
-    return md.get("source_url") or md.get("sourceURL", "")
-
-
-def _normalize_page_metadata(raw: dict[str, Any]) -> dict[str, Any]:
-    out: dict[str, Any] = {}
-    for key in ("title", "language", "description"):
-        if value := raw.get(key):
-            out[key] = value
-    return out
-
-
-def serialize_page(page, *, site_seed_url: str | None = None) -> dict[str, Any]:
-    if not page.markdown:
-        raise ValueError("No markdown")
-    raw = _metadata_dict(page.metadata)
-    source_url = _page_url(page.metadata)
-    page_metadata = _normalize_page_metadata(raw)
-    return {
-        "url": source_url,
-        "markdown": page.markdown,
-        "metadata": page_metadata,
-        "chunks": build_rag_chunks(
-            page.markdown,
-            source_url=source_url,
-            title=page_metadata.get("title"),
-            language=page_metadata.get("language"),
-            site_seed_url=site_seed_url,
-        ),
-    }
-
-
 @app.get("/")
 async def read_root():
     return {"status": "ok"}
@@ -99,7 +59,7 @@ async def crawl(url: str) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return serialize_page(await scrape_page(url))
+        return process_page_data(await scrape_page(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -111,7 +71,7 @@ async def crawl_site_endpoint(url: str) -> list[dict[str, Any]]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return [serialize_page(page, site_seed_url=url) for page in await crawl_site(url)]
+        return [process_page_data(page, site_seed_url=url) for page in await crawl_site(url)]
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -129,10 +89,10 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     try:
         for page in await crawl_site(url, limit=MAX_CRAWL_PAGES):
             try:
-                pages.append(serialize_page(page, site_seed_url=url))
+                pages.append(process_page_data(page, site_seed_url=url))
             except ValueError as e:
                 failures.append({
-                    "url": _page_url(page.metadata),
+                    "url": page_url(page.metadata),
                     "error": str(e),
                 })
     except Exception as e:
@@ -154,27 +114,36 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
     }
 
 
-def serialize_social(ctx: ScrapeContext) -> dict[str, Any]:
-    records = extract_records(ctx)
-    chunks = records_to_chunks(records, ctx.platform)
-    if not chunks:
-        raise ValueError("No content extracted")
+@app.post("/process/page")
+async def process_page(body: ProcessPageRequest) -> dict[str, Any]:
+    if not body.markdown.strip():
+        raise HTTPException(status_code=400, detail="markdown is required")
+    try:
+        return process_page_data(
+            crawled_page_from_request(body),
+            site_seed_url=body.site_seed_url,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
-    return {
-        "url": ctx.request_url,
-        "platform": ctx.platform,
-        "record_type": primary_record_type(ctx),
-        "metadata": top_level_metadata(records, ctx),
-        "raw": ctx.raw,
-        "chunks": chunks,
-    }
+
+@app.post("/process/social")
+async def process_social(body: ProcessSocialRequest) -> dict[str, Any]:
+    try:
+        return process_social_data(scrape_context_from_request(body))
+    except ValueError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 async def _social_endpoint(url: str, scrape) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return serialize_social(await scrape(url))
+        return process_social_data(await scrape(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except RuntimeError as e:
