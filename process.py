@@ -108,3 +108,26 @@ def scrape_context_from_request(body: ProcessSocialRequest) -> ScrapeContext:
         request_url=body.request_url,
         raw=body.raw,
     )
+
+
+def crawl_page_payload(page: CrawledPage, *, site_seed_url: str | None = None) -> dict[str, Any]:
+    raw = _metadata_dict(page.metadata)
+    payload: dict[str, Any] = {
+        "markdown": page.markdown,
+        "url": page_url(page.metadata),
+    }
+    for key in ("title", "language", "description"):
+        if value := raw.get(key):
+            payload[key] = value
+    if site_seed_url:
+        payload["site_seed_url"] = site_seed_url
+    return payload
+
+
+def social_scrape_payload(ctx: ScrapeContext) -> dict[str, Any]:
+    return {
+        "platform": ctx.platform,
+        "scraper_type": ctx.scraper_type,
+        "request_url": ctx.request_url,
+        "raw": ctx.raw,
+    }

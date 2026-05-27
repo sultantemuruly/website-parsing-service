@@ -16,11 +16,12 @@ from crawl import (
 from process import (
     ProcessPageRequest,
     ProcessSocialRequest,
+    crawl_page_payload,
     crawled_page_from_request,
-    page_url,
     process_page_data,
     process_social_data,
     scrape_context_from_request,
+    social_scrape_payload,
 )
 from social_platforms import (
     scrape_facebook_url,
@@ -59,7 +60,7 @@ async def crawl(url: str) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return process_page_data(await scrape_page(url))
+        return crawl_page_payload(await scrape_page(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -71,7 +72,10 @@ async def crawl_site_endpoint(url: str) -> list[dict[str, Any]]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return [process_page_data(page, site_seed_url=url) for page in await crawl_site(url)]
+        return [
+            crawl_page_payload(page, site_seed_url=url)
+            for page in await crawl_site(url)
+        ]
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
@@ -88,13 +92,7 @@ async def crawl_site_partial(url: str) -> dict[str, Any]:
 
     try:
         for page in await crawl_site(url, limit=MAX_CRAWL_PAGES):
-            try:
-                pages.append(process_page_data(page, site_seed_url=url))
-            except ValueError as e:
-                failures.append({
-                    "url": page_url(page.metadata),
-                    "error": str(e),
-                })
+            pages.append(crawl_page_payload(page, site_seed_url=url))
     except Exception as e:
         if pages or failures:
             return {
@@ -143,7 +141,7 @@ async def _social_endpoint(url: str, scrape) -> dict[str, Any]:
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     try:
-        return process_social_data(await scrape(url))
+        return social_scrape_payload(await scrape(url))
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except RuntimeError as e:

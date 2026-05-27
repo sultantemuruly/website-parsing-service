@@ -38,9 +38,11 @@ Failed requests return FastAPI’s standard shape:
 
 ## Shared types
 
+Scrape endpoints return **input payloads** (paste directly into `/process/*`). Process endpoints return **results with chunks**.
+
 ### `Chunk`
 
-Used by crawl and social endpoints. Text is split with chunk size **512** and overlap **50** (see `chunking.py`).
+Returned only by `/process/page` and `/process/social`. Text is split with chunk size **512** and overlap **50** (see `chunking.py`).
 
 ```ts
 type Chunk = {
@@ -64,9 +66,24 @@ type Chunk = {
 };
 ```
 
+### `CrawlPagePayload`
+
+Returned by `/crawl*` endpoints. Same shape as the `/process/page` request body — paste as-is to get chunks.
+
+```ts
+type CrawlPagePayload = {
+  markdown: string;
+  url: string;
+  title?: string;
+  language?: string;
+  description?: string;
+  site_seed_url?: string;  // set on site crawl routes only
+};
+```
+
 ### `PageResult`
 
-Single crawled web page.
+Returned by `/process/page` only.
 
 ```ts
 type PageResult = {
@@ -81,20 +98,33 @@ type PageResult = {
 };
 ```
 
-Site-wide crawl responses also set `metadata.site_seed_url` on each chunk to the seed URL passed to the endpoint.
+When `site_seed_url` was provided to `/process/page`, each chunk includes `metadata.site_seed_url`.
+
+### `SocialScrapePayload`
+
+Returned by `/linkedin`, `/instagram`, and `/facebook`. Same shape as the `/process/social` request body — paste as-is to get chunks.
+
+```ts
+type SocialScrapePayload = {
+  platform: "linkedin" | "instagram" | "facebook";
+  scraper_type: string;   // Bright Data scraper used (e.g. "profiles", "posts")
+  request_url: string;
+  raw: object | object[]; // Bright Data payload (opaque)
+};
+```
 
 ### `SocialResult`
 
-Normalized social scrape (LinkedIn, Instagram, Facebook).
+Returned by `/process/social` only.
 
 ```ts
 type SocialResult = {
   url: string;
   platform: "linkedin" | "instagram" | "facebook";
-  scraper_type: string;             // Bright Data scraper used (e.g. "profiles", "posts")
+  scraper_type: string;
   record_type: string;              // primary type for this scrape (see table below)
   metadata: { title?: string };     // often {}; title when derivable from primary record
-  raw: object | object[];           // Bright Data payload (opaque)
+  raw: object | object[];
   chunks: Chunk[];                  // metadata.content_type === "{platform}_record"
 };
 ```
@@ -125,9 +155,19 @@ Scrape a single URL to markdown (Crawl4AI / headless Chromium).
 |-------------|----------|-------------|
 | `url` | yes | Page URL to scrape |
 
-**Response `200`:** `PageResult`
+**Response `200`:** `CrawlPagePayload` (no `chunks` — call `/process/page` to chunk)
 
 **Errors:** `400` empty `url`; `502` no markdown or scrape failure; `500` other.
+
+**Round-trip:**
+
+```http
+POST /crawl?url=https://example.com
+→ copy JSON body as-is →
+POST /process/page
+Content-Type: application/json
+→ PageResult with chunks
+```
 
 ---
 
@@ -139,7 +179,7 @@ Crawl a site (up to **100** pages, max discovery depth **2**).
 |-------------|----------|-------------|
 | `url` | yes | Site seed URL |
 
-**Response `200`:** `PageResult[]` — one entry per successfully serialized page. Each chunk includes `metadata.site_seed_url` set to the seed `url`.
+**Response `200`:** `CrawlPagePayload[]` — one entry per successfully crawled page. Each payload includes `site_seed_url` set to the seed `url`.
 
 **Errors:** `400` empty `url`; `502` / `500` if the crawl fails entirely (no partial wrapper).
 
@@ -157,9 +197,9 @@ Same crawl as `/crawl/site`, but failed pages are reported in `failures` instead
 
 ```ts
 type PartialCrawlResult = {
-  partial: boolean;       // true if any page failed, or top-level error with partial data
+  partial: boolean;       // true if top-level error with partial data
   site_seed_url: string;
-  pages: PageResult[];
+  pages: CrawlPagePayload[];
   failures: Array<{ url: string; error: string }>;
   error?: string;         // present when crawl threw but pages/failures were collected
 };
@@ -175,17 +215,17 @@ type PartialCrawlResult = {
 
 ### `POST /facebook`
 
-Scrape a social URL via Bright Data and return normalized chunks.
+Scrape a social URL via Bright Data. Returns raw payload for `/process/social` — no chunks.
 
 | Query param | Required | Description |
 |-------------|----------|-------------|
 | `url` | yes | Profile, company, post, or other supported URL for that platform |
 
-**Response `200`:** `SocialResult`
+**Response `200`:** `SocialScrapePayload`
 
-**Errors:** `400` empty `url`; `502` unsupported URL, Bright Data failure, or no extractable content; `500` other.
+**Errors:** `400` empty `url`; `502` unsupported URL or Bright Data failure; `500` other.
 
-#### Top-level `record_type` by URL (inferred server-side)
+#### Top-level `record_type` by URL (inferred by `/process/social`, not returned by scrape)
 
 | Platform | URL pattern (simplified) | `record_type` |
 |----------|--------------------------|---------------|
@@ -203,30 +243,18 @@ Scrape a social URL via Bright Data and return normalized chunks.
 
 Unsupported URLs return `502` with a message like `Unsupported LinkedIn URL: ...`.
 
-#### Example success shape (LinkedIn profile)
+#### Example scrape response (LinkedIn profile)
 
 ```json
 {
-  "url": "https://www.linkedin.com/in/jane-doe",
   "platform": "linkedin",
   "scraper_type": "profiles",
-  "record_type": "profile",
-  "metadata": { "title": "Jane Doe" },
-  "raw": { },
-  "chunks": [
-    {
-      "text": "name: Jane Doe\nheadline: ...",
-      "metadata": {
-        "source_url": "https://www.linkedin.com/in/jane-doe",
-        "content_type": "linkedin_record",
-        "chunk_index": 0,
-        "platform": "linkedin",
-        "record_type": "profile"
-      }
-    }
-  ]
+  "request_url": "https://www.linkedin.com/in/jane-doe",
+  "raw": { }
 }
 ```
+
+Paste into `/process/social` to get `SocialResult` with `record_type`, `metadata`, and `chunks`.
 
 ---
 
@@ -290,15 +318,46 @@ Normalize a Bright Data social payload into RAG-ready chunks without scraping. A
 
 Use `scraper_type` from a prior social scrape response to round-trip stored `raw` payloads through this endpoint.
 
+#### Example process response (LinkedIn profile)
+
+```json
+{
+  "url": "https://www.linkedin.com/in/jane-doe",
+  "platform": "linkedin",
+  "scraper_type": "profiles",
+  "record_type": "profile",
+  "metadata": { "title": "Jane Doe" },
+  "raw": { },
+  "chunks": [
+    {
+      "text": "name: Jane Doe\nheadline: ...",
+      "metadata": {
+        "source_url": "https://www.linkedin.com/in/jane-doe",
+        "content_type": "linkedin_record",
+        "chunk_index": 0,
+        "platform": "linkedin",
+        "record_type": "profile"
+      }
+    }
+  ]
+}
+```
+
+---
+
+## Breaking change
+
+Scrape endpoints (`/crawl*`, `/linkedin`, `/instagram`, `/facebook`) no longer return `chunks`. Clients that read chunks directly from scrape responses must call `/process/page` or `/process/social` instead. Scrape output is now the exact JSON body accepted by the corresponding process endpoint.
+
 ---
 
 ## Client integration notes
 
 1. **Use query params on scrape POST** — e.g. `fetch(\`${base}/crawl?url=${encodeURIComponent(url)}\`, { method: 'POST' })`.
-2. **Use JSON bodies on process POST** — e.g. `fetch(\`${base}/process/page\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ markdown, url }) })`.
-3. **Prefer `chunks` for RAG** — each chunk is self-contained with `source_url` and indexing metadata for vector stores.
-4. **Use `markdown` / `raw` for display** — full page markdown or upstream JSON when you need the complete source.
-5. **Two-step pipeline** — scrape once, store `markdown` or `raw`, then call `/process/page` or `/process/social` later without re-scraping.
+2. **Use JSON bodies on process POST** — e.g. `fetch(\`${base}/process/page\`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(crawlPayload) })`.
+3. **Prefer `chunks` for RAG** — call `/process/*` to get chunks; each chunk is self-contained with `source_url` and indexing metadata for vector stores.
+4. **Use `markdown` / `raw` for display** — scrape responses include full page markdown or upstream JSON when you need the complete source.
+5. **Two-step pipeline** — scrape once (response is paste-ready for `/process/*`), store the payload, then call `/process/page` or `/process/social` later without re-scraping.
 6. **Partial site crawl** — check `partial`, `failures`, and optional `error`; do not assume every discovered page appears in `pages`.
 7. **Timeouts** — crawls and social scrapes can take a long time; set generous client timeouts and loading states.
 
