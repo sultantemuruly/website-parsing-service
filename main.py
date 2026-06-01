@@ -1,18 +1,18 @@
+import asyncio
+import os
 from contextlib import asynccontextmanager
 from typing import Any
 
-from crawl4ai import AsyncWebCrawler
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import (
     MAX_CRAWL_PAGES,
-    browser_config,
-    clear_crawler,
+    close_crawler,
     crawl_site,
     crawl_site_with_outcomes,
-    init_crawler,
     scrape_page,
+    start_crawler,
 )
 from process import (
     ProcessPageRequest,
@@ -30,14 +30,80 @@ from social_platforms import (
     scrape_linkedin_url,
 )
 
-@asynccontextmanager
-async def lifespan(_app: FastAPI):
-    async with AsyncWebCrawler(config=browser_config()) as crawler:
-        init_crawler(crawler)
+
+def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    try:
+        return max(int(raw_value), minimum)
+    except ValueError:
+        return default
+
+
+CRAWL_MAX_IN_FLIGHT = _env_int("CRAWL_MAX_IN_FLIGHT", 1, minimum=1)
+CRAWL_QUEUE_TIMEOUT_MS = _env_int("CRAWL_QUEUE_TIMEOUT_MS", 1_000, minimum=1)
+
+
+class CrawlRequestLimiter:
+    def __init__(self, max_in_flight: int, queue_timeout_ms: int):
+        self._semaphore = asyncio.Semaphore(max_in_flight)
+        self._queue_timeout_seconds = queue_timeout_ms / 1000
+
+    @asynccontextmanager
+    async def slot(self):
+        try:
+            await asyncio.wait_for(
+                self._semaphore.acquire(),
+                timeout=self._queue_timeout_seconds,
+            )
+        except TimeoutError as exc:
+            raise HTTPException(
+                status_code=429,
+                detail="Crawler is busy, retry later",
+            ) from exc
+
         try:
             yield
         finally:
-            clear_crawler()
+            self._semaphore.release()
+
+
+def _get_crawl_limiter(app: FastAPI) -> CrawlRequestLimiter:
+    limiter = getattr(app.state, "crawl_limiter", None)
+    if limiter is None:
+        limiter = CrawlRequestLimiter(
+            max_in_flight=CRAWL_MAX_IN_FLIGHT,
+            queue_timeout_ms=CRAWL_QUEUE_TIMEOUT_MS,
+        )
+        app.state.crawl_limiter = limiter
+    return limiter
+
+
+async def _run_limited_crawl(request: Request, operation):
+    async with _get_crawl_limiter(request.app).slot():
+        return await operation()
+
+
+async def _run_crawl_endpoint(request: Request, operation):
+    try:
+        return await _run_limited_crawl(request, operation)
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    _get_crawl_limiter(_app)
+    await start_crawler()
+    try:
+        yield
+    finally:
+        await close_crawler()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -56,52 +122,47 @@ async def read_root():
     return {"status": "ok"}
 
 
-@app.post("/crawl")
-async def crawl(url: str) -> dict[str, Any]:
-    if not url:
-        raise HTTPException(status_code=400, detail="URL is required")
-    try:
-        return crawl_page_payload(await scrape_page(url))
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def _crawl_payload(url: str) -> dict[str, Any]:
+    return crawl_page_payload(await scrape_page(url))
 
 
-@app.post("/crawl/site")
-async def crawl_site_endpoint(url: str) -> list[dict[str, Any]]:
-    if not url:
-        raise HTTPException(status_code=400, detail="URL is required")
-    try:
-        return [
-            crawl_page_payload(page, site_seed_url=url)
-            for page in await crawl_site(url)
-        ]
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+async def _crawl_site_payload(url: str) -> list[dict[str, Any]]:
+    return [
+        crawl_page_payload(page, site_seed_url=url)
+        for page in await crawl_site(url)
+    ]
 
 
-@app.post("/crawl/site/partial")
-async def crawl_site_partial(url: str) -> dict[str, Any]:
-    if not url:
-        raise HTTPException(status_code=400, detail="URL is required")
-
-    try:
-        crawled_pages, failures = await crawl_site_with_outcomes(url, limit=MAX_CRAWL_PAGES)
-        pages = [
-            crawl_page_payload(page, site_seed_url=url) for page in crawled_pages
-        ]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+async def _crawl_site_partial_payload(url: str) -> dict[str, Any]:
+    crawled_pages, failures = await crawl_site_with_outcomes(url, limit=MAX_CRAWL_PAGES)
+    pages = [crawl_page_payload(page, site_seed_url=url) for page in crawled_pages]
     return {
         "partial": bool(failures),
         "site_seed_url": url,
         "pages": pages,
         "failures": failures,
     }
+
+
+@app.post("/crawl")
+async def crawl(request: Request, url: str) -> dict[str, Any]:
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    return await _run_crawl_endpoint(request, lambda: _crawl_payload(url))
+
+
+@app.post("/crawl/site")
+async def crawl_site_endpoint(request: Request, url: str) -> list[dict[str, Any]]:
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    return await _run_crawl_endpoint(request, lambda: _crawl_site_payload(url))
+
+
+@app.post("/crawl/site/partial")
+async def crawl_site_partial(request: Request, url: str) -> dict[str, Any]:
+    if not url:
+        raise HTTPException(status_code=400, detail="URL is required")
+    return await _run_crawl_endpoint(request, lambda: _crawl_site_partial_payload(url))
 
 
 @app.post("/process/page")

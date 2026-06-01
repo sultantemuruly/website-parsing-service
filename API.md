@@ -60,6 +60,8 @@ const socialResult = await processRes.json(); // SocialResult — use socialResu
 | Only successful pages | `POST /crawl/site?url=...` → `CrawlPagePayload[]` |
 | Successes + per-URL failures | `POST /crawl/site/partial?url=...` → `PartialCrawlResult` |
 
+Use `POST /crawl/site/partial` by default for user-facing flows. It preserves successful pages and exposes crawl failures when the shared browser is recycled mid-run.
+
 Then call `POST /process/page` once per item in `pages` (or batch in your app).
 
 ---
@@ -259,13 +261,13 @@ Scrape one URL to markdown.
 
 **`200`:** `CrawlPagePayload`
 
-**Errors:** `400` missing `url`; `502` scrape failed or no markdown; `500` other.
+**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` scrape failed, browser recovery was exhausted, or no markdown; `500` other.
 
 ---
 
 ### `POST /crawl/site`
 
-BFS site crawl: up to **100** pages, max depth **2**, same origin only.
+BFS site crawl: up to **`CRAWL_MAX_PAGES`** pages (default **25**), max depth **`CRAWL_MAX_DEPTH`** (default **2**), same origin only. Internal Crawl4AI fan-out is capped by `CRAWL_SITE_SEMAPHORE_COUNT` (default **1**).
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -275,13 +277,13 @@ BFS site crawl: up to **100** pages, max depth **2**, same origin only.
 
 **Empty array:** crawl ran but every page failed or had no markdown.
 
-**Errors:** `400` missing `url`; `502` if the crawl raises `ValueError`; `500` other.
+**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if the crawl fails before any usable result can be returned; `500` other.
 
 ---
 
 ### `POST /crawl/site/partial`
 
-Same limits as `/crawl/site`, but returns failures per URL.
+Same limits as `/crawl/site`, but returns failures per URL. This is the recommended endpoint for site crawls on constrained deployments because successful pages are preserved even if the browser dies partway through a run.
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -289,7 +291,7 @@ Same limits as `/crawl/site`, but returns failures per URL.
 
 **`200`:** `PartialCrawlResult`
 
-**Errors:** `400` missing `url`; `500` if the crawl engine throws with no result set to return.
+**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if crawler recovery is exhausted before any result set can be returned; `500` other.
 
 ---
 
@@ -476,5 +478,15 @@ Normalize Bright Data JSON into chunks without scraping. Accepts `SocialScrapePa
 | `BRIGHTDATA_API_TOKEN` | yes for social routes | Bright Data API token |
 | `PORT` | no | HTTP port (default `8000`) |
 | `PLAYWRIGHT_BROWSERS_PATH` | no | Chromium install dir (Docker / `build.sh`) |
+| `CRAWL_MAX_IN_FLIGHT` | no | Max concurrent crawl requests per replica (default `1`) |
+| `CRAWL_QUEUE_TIMEOUT_MS` | no | How long a request waits for a crawl slot before returning `429` (default `1000`) |
+| `CRAWL_MAX_PAGES` | no | Max pages returned from a site crawl (default `25`) |
+| `CRAWL_MAX_DEPTH` | no | Deep-crawl BFS depth cap (default `2`) |
+| `CRAWL_SITE_SEMAPHORE_COUNT` | no | Crawl4AI per-site concurrency cap for site crawls (default `1`) |
+| `CRAWL_PAGE_TIMEOUT_MS` | no | Per-page Crawl4AI timeout in milliseconds (default `30000`) |
+| `CRAWL_BROWSER_MEMORY_SAVING` | no | Enables Crawl4AI Chromium memory-saving flags (default `true`) |
+| `CRAWL_MAX_PAGES_BEFORE_RECYCLE` | no | Recycle Chromium after this many pages to reclaim memory (default `200`) |
+| `CRAWL_TEXT_MODE` | no | Disables rich page assets for lower memory use (default `false`) |
+| `CRAWL_LIGHT_MODE` | no | Disables background browser features for lower overhead (default `false`) |
 
 Web routes use local Crawl4AI — no API key. Run `build.sh` (or the Docker image build) before starting the server so Chromium is available.

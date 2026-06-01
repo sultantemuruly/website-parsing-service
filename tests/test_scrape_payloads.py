@@ -1,10 +1,12 @@
+from contextlib import asynccontextmanager
 import json
 import os
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-from crawl import CrawledPage
+from crawl import CrawledPage, crawl_site_with_outcomes, scrape_page
 from process import (
     ProcessPageRequest,
     crawl_page_payload,
@@ -185,6 +187,148 @@ class PartialCrawlEndpointTest(unittest.TestCase):
         self.assertEqual(data["pages"][0]["site_seed_url"], "https://example.com")
         self.assertEqual(len(data["failures"]), 1)
         self.assertEqual(data["failures"][0]["error"], "No markdown")
+
+
+class EndpointLimiterTest(unittest.TestCase):
+    def test_returns_429_when_crawl_queue_is_full(self):
+        class BusyLimiter:
+            @asynccontextmanager
+            async def slot(self):
+                raise RuntimeError("Limiter should be patched by endpoint wrapper")
+                yield
+
+        @asynccontextmanager
+        async def saturated_slot():
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=429, detail="Crawler is busy, retry later")
+            yield
+
+        limiter = BusyLimiter()
+        limiter.slot = saturated_slot
+
+        had_existing = hasattr(client.app.state, "crawl_limiter")
+        original = getattr(client.app.state, "crawl_limiter", None)
+        client.app.state.crawl_limiter = limiter
+        try:
+            with patch("main.scrape_page", new=AsyncMock()) as scrape_mock:
+                response = client.post("/crawl?url=https://example.com/page")
+        finally:
+            if had_existing:
+                client.app.state.crawl_limiter = original
+            else:
+                delattr(client.app.state, "crawl_limiter")
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.json()["detail"], "Crawler is busy, retry later")
+        scrape_mock.assert_not_called()
+
+
+class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
+    def _crawl_result(
+        self,
+        *,
+        success: bool,
+        url: str,
+        markdown: str = "",
+        error_message: str | None = None,
+    ):
+        return SimpleNamespace(
+            success=success,
+            url=url,
+            markdown=markdown,
+            metadata={"title": "Example"} if success else {},
+            error_message=error_message,
+        )
+
+    async def test_scrape_page_retries_once_after_browser_closed_exception(self):
+        closed_error = RuntimeError("Target page, context or browser has been closed")
+        crawler_one = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
+        crawler_two = SimpleNamespace(
+            arun=AsyncMock(
+                return_value=self._crawl_result(
+                    success=True,
+                    url="https://example.com/page",
+                    markdown="# Hello",
+                )
+            )
+        )
+
+        with patch(
+            "crawl._require_crawler",
+            new=AsyncMock(side_effect=[crawler_one, crawler_two]),
+        ), patch(
+            "crawl.replace_crawler",
+            new=AsyncMock(return_value=crawler_two),
+        ) as replace_mock:
+            page = await scrape_page("https://example.com/page")
+
+        self.assertEqual(page.markdown, "# Hello")
+        replace_mock.assert_awaited_once_with(crawler_one)
+        self.assertEqual(crawler_one.arun.await_count, 1)
+        self.assertEqual(crawler_two.arun.await_count, 1)
+
+    async def test_scrape_page_does_not_retry_forever(self):
+        closed_error = RuntimeError("Target page, context or browser has been closed")
+        crawler_one = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
+        crawler_two = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
+
+        with patch(
+            "crawl._require_crawler",
+            new=AsyncMock(side_effect=[crawler_one, crawler_two]),
+        ), patch(
+            "crawl.replace_crawler",
+            new=AsyncMock(return_value=crawler_two),
+        ) as replace_mock:
+            with self.assertRaisesRegex(
+                ValueError,
+                "Target page, context or browser has been closed",
+            ):
+                await scrape_page("https://example.com/page")
+
+        replace_mock.assert_awaited_once_with(crawler_one)
+        self.assertEqual(crawler_one.arun.await_count, 1)
+        self.assertEqual(crawler_two.arun.await_count, 1)
+
+    async def test_site_partial_results_trigger_recycle_without_dropping_successes(self):
+        crawler = SimpleNamespace(
+            arun=AsyncMock(
+                return_value=[
+                    self._crawl_result(
+                        success=True,
+                        url="https://example.com/ok",
+                        markdown="# OK",
+                    ),
+                    self._crawl_result(
+                        success=False,
+                        url="https://example.com/bad",
+                        error_message="Target page, context or browser has been closed",
+                    ),
+                ]
+            )
+        )
+
+        with patch(
+            "crawl._require_crawler",
+            new=AsyncMock(return_value=crawler),
+        ), patch(
+            "crawl.replace_crawler",
+            new=AsyncMock(return_value=SimpleNamespace()),
+        ) as replace_mock:
+            pages, failures = await crawl_site_with_outcomes("https://example.com")
+
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0].metadata["source_url"], "https://example.com/ok")
+        self.assertEqual(
+            failures,
+            [
+                {
+                    "url": "https://example.com/bad",
+                    "error": "Target page, context or browser has been closed",
+                }
+            ],
+        )
+        replace_mock.assert_awaited_once_with(crawler)
 
 
 if __name__ == "__main__":
