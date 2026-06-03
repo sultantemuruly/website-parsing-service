@@ -29,6 +29,13 @@ class SummaryModel(BaseModel):
     )
 
 
+class BusinessProfileRequest(BaseModel):
+    context: str = Field(
+        min_length=1,
+        description="Raw page or site markdown, or other text about the business to summarize",
+    )
+
+
 def _get_agent():
     global _agent
     if _agent is None:

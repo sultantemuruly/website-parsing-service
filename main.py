@@ -30,7 +30,11 @@ from social_platforms import (
     scrape_linkedin_url,
 )
 
-from summary_agent import summarize_business_profile, SummaryModel
+from summary_agent import (
+    BusinessProfileRequest,
+    SummaryModel,
+    summarize_business_profile,
+)
 
 def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
     raw_value = os.getenv(name)
@@ -219,11 +223,11 @@ async def facebook(url: str) -> dict[str, Any]:
     return await _social_endpoint(url, scrape_facebook_url)
 
 @app.post("/business_profile")
-async def business_profile(context: str) -> SummaryModel:
-    if not context:
-        raise HTTPException(status_code=400, detail="Context is required")
+async def business_profile(body: BusinessProfileRequest) -> SummaryModel:
+    if not body.context.strip():
+        raise HTTPException(status_code=400, detail="context is required")
     try:
-        return await summarize_business_profile(context)
+        return await summarize_business_profile(body.context)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
