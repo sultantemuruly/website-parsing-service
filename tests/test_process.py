@@ -3,6 +3,10 @@ import os
 import unittest
 from pathlib import Path
 
+os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
+os.environ.setdefault("CF_ACCOUNT_ID", "test-account-id")
+os.environ.setdefault("CF_API_TOKEN", "test-cf-token")
+
 from crawl import CrawledPage
 from process import (
     ProcessPageRequest,
@@ -13,8 +17,6 @@ from process import (
     scrape_context_from_request,
 )
 from social_normalize import ScrapeContext
-
-os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
 from fastapi.testclient import TestClient
 
 from main import app
