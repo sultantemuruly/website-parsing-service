@@ -488,3 +488,18 @@ Normalize Bright Data JSON into chunks without scraping. Accepts `SocialScrapePa
 | `CRAWL_PAGE_TIMEOUT_MS` | no | Per-page Crawl4AI timeout in milliseconds (default `30000`) |
 
 Web routes use **Cloudflare Browser Run** over CDP (no local Chromium). Set `CF_ACCOUNT_ID` and `CF_API_TOKEN` before starting the server. Social routes still use Bright Data only.
+
+### Cloudflare Browser Run pricing
+
+Official pricing: [Cloudflare Browser Run — Pricing](https://developers.cloudflare.com/browser-rendering/pricing/)
+
+Web crawl uses **Browser Sessions** (Playwright / CDP), which bill on:
+
+| Metric | Workers Paid (typical production) |
+|--------|-----------------------------------|
+| Browser hours | **10 hours/month included**, then **$0.09/hour** |
+| Concurrent browsers (monthly avg of daily peaks) | **10 included**, then **$2.00/browser/month** |
+
+Workers Paid also has a base Workers plan fee (~$5/month). Workers Free includes **10 minutes of browser time per day** and **3 concurrent browsers** — usually too small for production.
+
+Each crawl request opens one remote browser session for the duration of that job (`POST /crawl` ≈ one page; site crawls ≈ one session for the whole BFS). Keep `CRAWL_MAX_IN_FLIGHT` low (default `1`) to stay within included concurrency. Monitor usage in the dashboard under **Compute → Browser Run**.
