@@ -35,7 +35,7 @@ CF_CDP_URL = (
 )
 
 MAX_CRAWL_PAGES = _env_int("CRAWL_MAX_PAGES", 25, minimum=1)
-MAX_DISCOVERY_DEPTH = _env_int("CRAWL_MAX_DEPTH", 2, minimum=1)
+MAX_DISCOVERY_DEPTH = _env_int("CRAWL_MAX_DEPTH", 1, minimum=1)
 PAGE_TIMEOUT_MS = _env_int("CRAWL_PAGE_TIMEOUT_MS", 30_000, minimum=1)
 SITE_CRAWL_SEMAPHORE_COUNT = _env_int("CRAWL_SITE_SEMAPHORE_COUNT", 1, minimum=1)
 
