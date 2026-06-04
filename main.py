@@ -8,11 +8,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from crawl import (
     MAX_CRAWL_PAGES,
-    close_crawler,
     crawl_site,
     crawl_site_with_outcomes,
     scrape_page,
-    start_crawler,
 )
 from process import (
     ProcessPageRequest,
@@ -104,11 +102,7 @@ async def _run_crawl_endpoint(request: Request, operation):
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     _get_crawl_limiter(_app)
-    await start_crawler()
-    try:
-        yield
-    finally:
-        await close_crawler()
+    yield
 
 
 app = FastAPI(lifespan=lifespan)

@@ -6,6 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
+os.environ.setdefault("CF_ACCOUNT_ID", "test-account-id")
+os.environ.setdefault("CF_API_TOKEN", "test-cf-token")
+
 from crawl import CrawledPage, crawl_site_with_outcomes, scrape_page
 from process import (
     ProcessPageRequest,
@@ -13,8 +17,6 @@ from process import (
     social_scrape_payload,
 )
 from social_normalize import ScrapeContext
-
-os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
 from fastapi.testclient import TestClient
 
 from main import app
@@ -224,6 +226,19 @@ class EndpointLimiterTest(unittest.TestCase):
         scrape_mock.assert_not_called()
 
 
+def _mock_crawler_context(*crawlers):
+    queue = list(crawlers)
+
+    @asynccontextmanager
+    async def _run_with_crawler():
+        if not queue:
+            raise RuntimeError("no crawler available")
+        crawler = queue.pop(0)
+        yield crawler
+
+    return _run_with_crawler
+
+
 class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
     def _crawl_result(
         self,
@@ -255,16 +270,12 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "crawl._require_crawler",
-            new=AsyncMock(side_effect=[crawler_one, crawler_two]),
-        ), patch(
-            "crawl.replace_crawler",
-            new=AsyncMock(return_value=crawler_two),
-        ) as replace_mock:
+            "crawl._run_with_crawler",
+            _mock_crawler_context(crawler_one, crawler_two),
+        ):
             page = await scrape_page("https://example.com/page")
 
         self.assertEqual(page.markdown, "# Hello")
-        replace_mock.assert_awaited_once_with(crawler_one)
         self.assertEqual(crawler_one.arun.await_count, 1)
         self.assertEqual(crawler_two.arun.await_count, 1)
 
@@ -274,19 +285,15 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
         crawler_two = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
 
         with patch(
-            "crawl._require_crawler",
-            new=AsyncMock(side_effect=[crawler_one, crawler_two]),
-        ), patch(
-            "crawl.replace_crawler",
-            new=AsyncMock(return_value=crawler_two),
-        ) as replace_mock:
+            "crawl._run_with_crawler",
+            _mock_crawler_context(crawler_one, crawler_two),
+        ):
             with self.assertRaisesRegex(
                 ValueError,
                 "Target page, context or browser has been closed",
             ):
                 await scrape_page("https://example.com/page")
 
-        replace_mock.assert_awaited_once_with(crawler_one)
         self.assertEqual(crawler_one.arun.await_count, 1)
         self.assertEqual(crawler_two.arun.await_count, 1)
 
@@ -308,13 +315,7 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        with patch(
-            "crawl._require_crawler",
-            new=AsyncMock(return_value=crawler),
-        ), patch(
-            "crawl.replace_crawler",
-            new=AsyncMock(return_value=SimpleNamespace()),
-        ) as replace_mock:
+        with patch("crawl._run_with_crawler", _mock_crawler_context(crawler)):
             pages, failures = await crawl_site_with_outcomes("https://example.com")
 
         self.assertEqual(len(pages), 1)
@@ -328,7 +329,6 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
                 }
             ],
         )
-        replace_mock.assert_awaited_once_with(crawler)
 
 
 if __name__ == "__main__":

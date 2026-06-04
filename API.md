@@ -1,6 +1,6 @@
 # Website Parsing Service — API Reference
 
-FastAPI service that scrapes websites (Crawl4AI + Playwright) and social profiles (Bright Data), then optionally splits content into RAG-ready chunks.
+FastAPI service that scrapes websites (Crawl4AI + Cloudflare Browser Run over CDP) and social profiles (Bright Data), then optionally splits content into RAG-ready chunks.
 
 **Base URL:** `http://localhost:8000` (override with `PORT` in `start.sh`)
 
@@ -475,18 +475,16 @@ Normalize Bright Data JSON into chunks without scraping. Accepts `SocialScrapePa
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
+| `CF_ACCOUNT_ID` | yes for web routes | Cloudflare account ID for Browser Rendering CDP |
+| `CF_API_TOKEN` | yes for web routes | API token with **Browser Rendering - Edit** permission |
+| `CF_BROWSER_KEEP_ALIVE_MS` | no | CDP session keep-alive in ms (default `600000`, max ~600000) |
 | `BRIGHTDATA_API_TOKEN` | yes for social routes | Bright Data API token |
 | `PORT` | no | HTTP port (default `8000`) |
-| `PLAYWRIGHT_BROWSERS_PATH` | no | Chromium install dir (Docker / `build.sh`) |
-| `CRAWL_MAX_IN_FLIGHT` | no | Max concurrent crawl requests per replica (default `1`) |
+| `CRAWL_MAX_IN_FLIGHT` | no | Max concurrent crawl requests per replica (default `1`); keep ≤ Cloudflare browser concurrency |
 | `CRAWL_QUEUE_TIMEOUT_MS` | no | How long a request waits for a crawl slot before returning `429` (default `1000`) |
 | `CRAWL_MAX_PAGES` | no | Max pages returned from a site crawl (default `25`) |
 | `CRAWL_MAX_DEPTH` | no | Deep-crawl BFS depth cap (default `2`) |
 | `CRAWL_SITE_SEMAPHORE_COUNT` | no | Crawl4AI per-site concurrency cap for site crawls (default `1`) |
 | `CRAWL_PAGE_TIMEOUT_MS` | no | Per-page Crawl4AI timeout in milliseconds (default `30000`) |
-| `CRAWL_BROWSER_MEMORY_SAVING` | no | Enables Crawl4AI Chromium memory-saving flags (default `true`) |
-| `CRAWL_MAX_PAGES_BEFORE_RECYCLE` | no | Recycle Chromium after this many pages to reclaim memory (default `200`) |
-| `CRAWL_TEXT_MODE` | no | Disables rich page assets for lower memory use (default `false`) |
-| `CRAWL_LIGHT_MODE` | no | Disables background browser features for lower overhead (default `false`) |
 
-Web routes use local Crawl4AI — no API key. Run `build.sh` (or the Docker image build) before starting the server so Chromium is available.
+Web routes use **Cloudflare Browser Run** over CDP (no local Chromium). Set `CF_ACCOUNT_ID` and `CF_API_TOKEN` before starting the server. Social routes still use Bright Data only.

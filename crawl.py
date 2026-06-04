@@ -1,12 +1,14 @@
-import asyncio
 import os
-from contextlib import suppress
+from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Awaitable, Callable, TypeVar
 
+from crawl_cdp_patch import apply_cdp_auth_patch
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.models import CrawlResult
+
+apply_cdp_auth_patch()
 
 
 def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
@@ -19,28 +21,23 @@ def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
         return default
 
 
-def _env_bool(name: str, default: bool) -> bool:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
+CF_API_TOKEN = os.getenv("CF_API_TOKEN")
+if not CF_ACCOUNT_ID:
+    raise ValueError("CF_ACCOUNT_ID is not set")
+if not CF_API_TOKEN:
+    raise ValueError("CF_API_TOKEN is not set")
 
+CF_BROWSER_KEEP_ALIVE_MS = _env_int("CF_BROWSER_KEEP_ALIVE_MS", 600_000, minimum=1)
+CF_CDP_URL = (
+    f"wss://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/"
+    f"browser-rendering/devtools/browser?keep_alive={CF_BROWSER_KEEP_ALIVE_MS}"
+)
 
 MAX_CRAWL_PAGES = _env_int("CRAWL_MAX_PAGES", 25, minimum=1)
 MAX_DISCOVERY_DEPTH = _env_int("CRAWL_MAX_DEPTH", 2, minimum=1)
 PAGE_TIMEOUT_MS = _env_int("CRAWL_PAGE_TIMEOUT_MS", 30_000, minimum=1)
 SITE_CRAWL_SEMAPHORE_COUNT = _env_int("CRAWL_SITE_SEMAPHORE_COUNT", 1, minimum=1)
-CRAWL_BROWSER_MEMORY_SAVING = _env_bool("CRAWL_BROWSER_MEMORY_SAVING", True)
-CRAWL_TEXT_MODE = _env_bool("CRAWL_TEXT_MODE", False)
-CRAWL_LIGHT_MODE = _env_bool("CRAWL_LIGHT_MODE", False)
-CRAWL_MAX_PAGES_BEFORE_RECYCLE = _env_int(
-    "CRAWL_MAX_PAGES_BEFORE_RECYCLE",
-    200,
-    minimum=0,
-)
-
-_crawler: AsyncWebCrawler | None = None
-_crawler_lock = asyncio.Lock()
 
 _BROWSER_CLOSED_MARKERS = (
     "target page, context or browser has been closed",
@@ -50,16 +47,21 @@ _BROWSER_CLOSED_MARKERS = (
     "target closed",
 )
 
+T = TypeVar("T")
+
 
 def browser_config() -> BrowserConfig:
     return BrowserConfig(
+        browser_mode="custom",
+        cdp_url=CF_CDP_URL,
+        cdp_cleanup_on_close=True,
+        cdp_close_delay=1.0,
+        cache_cdp_connection=False,
+        create_isolated_context=True,
         headless=True,
         viewport_width=1920,
         viewport_height=1080,
-        memory_saving_mode=CRAWL_BROWSER_MEMORY_SAVING,
-        max_pages_before_recycle=CRAWL_MAX_PAGES_BEFORE_RECYCLE,
-        text_mode=CRAWL_TEXT_MODE,
-        light_mode=CRAWL_LIGHT_MODE,
+        max_pages_before_recycle=0,
     )
 
 
@@ -93,51 +95,15 @@ class CrawledPage:
     metadata: dict[str, Any]
 
 
-async def _new_crawler() -> AsyncWebCrawler:
+@asynccontextmanager
+async def _run_with_crawler():
     crawler = AsyncWebCrawler(config=browser_config(), thread_safe=True)
     await crawler.start()
-    return crawler
-
-
-async def start_crawler() -> AsyncWebCrawler:
-    global _crawler
-    async with _crawler_lock:
-        if _crawler is None:
-            _crawler = await _new_crawler()
-        return _crawler
-
-
-async def close_crawler() -> None:
-    global _crawler
-    async with _crawler_lock:
-        crawler = _crawler
-        _crawler = None
-        if crawler is None:
-            return
+    try:
+        yield crawler
+    finally:
         with suppress(Exception):
             await crawler.close()
-
-
-async def replace_crawler(dead_crawler: AsyncWebCrawler | None = None) -> AsyncWebCrawler:
-    global _crawler
-    async with _crawler_lock:
-        if dead_crawler is not None and _crawler is not dead_crawler and _crawler is not None:
-            return _crawler
-
-        crawler_to_close = _crawler
-        _crawler = None
-        if crawler_to_close is not None:
-            with suppress(Exception):
-                await crawler_to_close.close()
-
-        _crawler = await _new_crawler()
-        return _crawler
-
-
-async def _require_crawler() -> AsyncWebCrawler:
-    if _crawler is None:
-        return await start_crawler()
-    return _crawler
 
 
 def _markdown_text(result: CrawlResult) -> str:
@@ -186,28 +152,23 @@ def _contains_browser_closed_result(result: CrawlResult | list[CrawlResult]) -> 
 
 
 async def _run_with_recovery(
-    operation,
+    operation: Callable[[AsyncWebCrawler], Awaitable[CrawlResult | list[CrawlResult]]],
 ) -> CrawlResult | list[CrawlResult]:
     for attempt in range(2):
-        crawler = await _require_crawler()
-        try:
-            result = await operation(crawler)
-        except Exception as exc:
-            if _browser_closed_message(exc) and attempt == 0:
-                await replace_crawler(crawler)
+        async with _run_with_crawler() as crawler:
+            try:
+                result = await operation(crawler)
+            except Exception as exc:
+                if _browser_closed_message(exc) and attempt == 0:
+                    continue
+                if _browser_closed_message(exc):
+                    raise ValueError(str(exc)) from exc
+                raise
+
+            if _all_results_browser_closed(result) and attempt == 0:
                 continue
-            if _browser_closed_message(exc):
-                raise ValueError(str(exc)) from exc
-            raise
 
-        if _all_results_browser_closed(result) and attempt == 0:
-            await replace_crawler(crawler)
-            continue
-
-        if _contains_browser_closed_result(result):
-            await replace_crawler(crawler)
-
-        return result
+            return result
 
     raise RuntimeError("Crawler recovery failed")
 
