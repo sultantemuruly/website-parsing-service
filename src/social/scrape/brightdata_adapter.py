@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from brightdata import BrightDataClient
 from brightdata.models import ScrapeResult
 
-from social_normalize import ScrapeContext
+from social.normalize.models import ScrapeContext
 
 load_dotenv(override=True)
 

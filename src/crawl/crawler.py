@@ -1,43 +1,20 @@
-import os
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar
 
-from crawl_cdp_patch import apply_cdp_auth_patch
+from clients.cdp_patch import apply_cdp_auth_patch
+from crawl.config import (
+    CF_CDP_URL,
+    MAX_CRAWL_PAGES,
+    MAX_DISCOVERY_DEPTH,
+    PAGE_TIMEOUT_MS,
+    SITE_CRAWL_SEMAPHORE_COUNT,
+)
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
 from crawl4ai.models import CrawlResult
 
 apply_cdp_auth_patch()
-
-
-def _env_int(name: str, default: int, *, minimum: int = 0) -> int:
-    raw_value = os.getenv(name)
-    if raw_value is None:
-        return default
-    try:
-        return max(int(raw_value), minimum)
-    except ValueError:
-        return default
-
-
-CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID")
-CF_API_TOKEN = os.getenv("CF_API_TOKEN")
-if not CF_ACCOUNT_ID:
-    raise ValueError("CF_ACCOUNT_ID is not set")
-if not CF_API_TOKEN:
-    raise ValueError("CF_API_TOKEN is not set")
-
-CF_BROWSER_KEEP_ALIVE_MS = _env_int("CF_BROWSER_KEEP_ALIVE_MS", 600_000, minimum=1)
-CF_CDP_URL = (
-    f"wss://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/"
-    f"browser-rendering/devtools/browser?keep_alive={CF_BROWSER_KEEP_ALIVE_MS}"
-)
-
-MAX_CRAWL_PAGES = _env_int("CRAWL_MAX_PAGES", 25, minimum=1)
-MAX_DISCOVERY_DEPTH = _env_int("CRAWL_MAX_DEPTH", 1, minimum=1)
-PAGE_TIMEOUT_MS = _env_int("CRAWL_PAGE_TIMEOUT_MS", 30_000, minimum=1)
-SITE_CRAWL_SEMAPHORE_COUNT = _env_int("CRAWL_SITE_SEMAPHORE_COUNT", 1, minimum=1)
 
 _BROWSER_CLOSED_MARKERS = (
     "target page, context or browser has been closed",
@@ -141,13 +118,6 @@ def _all_results_browser_closed(result: CrawlResult | list[CrawlResult]) -> bool
     return bool(results) and all(
         (not item.success) and _browser_closed_message(item.error_message or "")
         for item in results
-    )
-
-
-def _contains_browser_closed_result(result: CrawlResult | list[CrawlResult]) -> bool:
-    return any(
-        (not item.success) and _browser_closed_message(item.error_message or "")
-        for item in _normalize_results(result)
     )
 
 

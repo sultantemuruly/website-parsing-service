@@ -16,3 +16,6 @@ wheels/
 
 # Local test payloads (copy from tests/fixtures.example/)
 tests/fixtures/
+
+# Cursor IDE (skills, local agent config)
+.cursor/

@@ -2,6 +2,8 @@
 
 FastAPI service that scrapes websites (Crawl4AI + Cloudflare Browser Run over CDP) and social profiles (Bright Data), then optionally splits content into RAG-ready chunks.
 
+**Source layout:** application code lives under `src/` (see `.cursor/skills/layered-service/SKILL.md`). Run via `start.sh` (`PYTHONPATH=src`, `uvicorn main:app`).
+
 **Base URL:** `http://localhost:8000` (override with `PORT` in `start.sh`)
 
 **OpenAPI / Swagger:** `GET /docs` on the running server
