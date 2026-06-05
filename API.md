@@ -491,17 +491,39 @@ Normalize Bright Data JSON into chunks without scraping. Accepts `SocialScrapePa
 
 Web routes use **Cloudflare Browser Run** over CDP (no local Chromium). Set `CF_ACCOUNT_ID` and `CF_API_TOKEN` before starting the server. Social routes still use Bright Data only.
 
-### Cloudflare Browser Run pricing
+## How billing works
 
-Official pricing: [Cloudflare Browser Run — Pricing](https://developers.cloudflare.com/browser-rendering/pricing/)
+Web crawl routes use **Cloudflare Browser Sessions** (Playwright / CDP). Official pricing: [Cloudflare Browser Run — Pricing](https://developers.cloudflare.com/browser-rendering/pricing/).
 
-Web crawl uses **Browser Sessions** (Playwright / CDP), which bill on:
+Cloudflare charges on **two separate metrics** — not per request, and not per “session created”:
 
-| Metric | Workers Paid (typical production) |
-|--------|-----------------------------------|
-| Browser hours | **10 hours/month included**, then **$0.09/hour** |
-| Concurrent browsers (monthly avg of daily peaks) | **10 included**, then **$2.00/browser/month** |
+| Metric | What you pay for | Workers Paid |
+|--------|------------------|--------------|
+| **Browser hours** | Total time remote browser sessions exist (active or idle) | 10 hrs/month included, then **$0.09/hr** |
+| **Concurrent browsers** | How many sessions run **at the same time** (monthly average of daily peaks) | 10 included, then **$2.00/browser/month** |
 
-Workers Paid also has a base Workers plan fee (~$5/month). Workers Free includes **10 minutes of browser time per day** and **3 concurrent browsers** — usually too small for production.
+### Browser hours (duration)
 
-Each crawl request opens one remote browser session for the duration of that job (`POST /crawl` ≈ one page; site crawls ≈ one session for the whole BFS). Keep `CRAWL_MAX_IN_FLIGHT` low (default `1`) to stay within included concurrency. Monitor usage in the dashboard under **Compute → Browser Run**.
+Usage is totaled in **seconds per day**, summed for the month, then rounded to whole hours (30+ minutes in a month rounds up to 1 hour).
+
+- A session that stays open counts for the **entire time it exists**, not just while a page is loading.
+- After a crawl finishes, the remote browser may remain open until its idle timeout (`CF_BROWSER_KEEP_ALIVE_MS`, default 10 minutes). **Those idle minutes are billable.**
+- Failed infrastructure errors are not charged; normal session lifetime is.
+
+### Concurrent browsers (overlap)
+
+This is **not** “how many crawls you ran this month.” Cloudflare records your **peak concurrent browser count each day**, then averages those daily peaks over the month.
+
+- `CRAWL_MAX_IN_FLIGHT=1` (default) keeps one browser per replica at a time — good for staying within included concurrency.
+- Brief spikes matter less than sustained high parallelism across replicas.
+
+### What this means for this service
+
+| Request | Typical browser usage |
+|---------|----------------------|
+| `POST /crawl` | One session for one page |
+| `POST /crawl/site` / `/crawl/site/partial` | One session for the whole site crawl (all pages in that job) |
+
+**Cost levers:** lower `CF_BROWSER_KEEP_ALIVE_MS` so sessions close sooner after a job; keep `CRAWL_MAX_IN_FLIGHT` ≤ your Cloudflare concurrency limit; avoid running many replicas that each hold an open browser at once.
+
+Workers Paid also has a base Workers plan fee (~$5/month). Workers Free includes **10 minutes of browser time per day** and **3 concurrent browsers** — usually too small for production. Monitor usage in the dashboard under **Compute → Browser Run**.
