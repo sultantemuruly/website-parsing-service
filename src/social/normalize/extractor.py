@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from chunking import build_rag_chunks
+from shared.chunking import build_rag_chunks
+from social.normalize.models import ScrapeContext, SocialRecord
 
 Extractor = Callable[[str, list[dict[str, Any]]], list["SocialRecord"]]
 
@@ -27,20 +27,8 @@ PRIMARY_RECORD_TYPE: dict[tuple[str, str], str] = {
 NESTED_POST_FIELDS = ("posts", "activity")
 
 
-@dataclass(frozen=True)
-class ScrapeContext:
-    platform: str
-    scraper_type: str
-    request_url: str
-    raw: Any
 
 
-@dataclass
-class SocialRecord:
-    text: str
-    record_type: str
-    source_url: str
-    extra_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 def normalize_raw(raw: Any) -> list[dict[str, Any]]:

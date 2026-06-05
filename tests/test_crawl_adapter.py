@@ -1,11 +1,9 @@
-import os
+import bootstrap  # noqa: F401, E402
+
 import unittest
 from types import SimpleNamespace
 
-os.environ.setdefault("CF_ACCOUNT_ID", "test-account-id")
-os.environ.setdefault("CF_API_TOKEN", "test-cf-token")
-
-from crawl import CrawledPage, _classify_site_result, result_to_page
+from crawl.crawler import CrawledPage, _classify_site_result, result_to_page
 
 
 def _make_result(**kwargs):

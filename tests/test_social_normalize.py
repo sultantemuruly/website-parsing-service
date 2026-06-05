@@ -1,15 +1,17 @@
+import bootstrap  # noqa: F401, E402
+
 import json
 import unittest
 from pathlib import Path
 
-from social_normalize import (
-    ScrapeContext,
+from process.social.service import process_social_data
+from social.normalize.extractor import (
     extract_records,
     primary_record_type,
     records_to_chunks,
     top_level_metadata,
 )
-from process import process_social_data
+from social.normalize.models import ScrapeContext
 
 FIXTURES = Path(__file__).parent / "fixtures"
 

@@ -1,25 +1,17 @@
+import bootstrap  # noqa: F401, E402
+
 import json
-import os
 import unittest
 from pathlib import Path
 
-os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
-os.environ.setdefault("CF_ACCOUNT_ID", "test-account-id")
-os.environ.setdefault("CF_API_TOKEN", "test-cf-token")
-
-from crawl import CrawledPage
-from process import (
-    ProcessPageRequest,
-    ProcessSocialRequest,
-    crawled_page_from_request,
-    process_page_data,
-    process_social_data,
-    scrape_context_from_request,
-)
-from social_normalize import ScrapeContext
+from crawl.crawler import CrawledPage
 from fastapi.testclient import TestClient
-
 from main import app
+from process.mappers import crawled_page_from_request, scrape_context_from_request
+from process.page.service import process_page_data
+from process.schemas import ProcessPageRequest, ProcessSocialRequest
+from process.social.service import process_social_data
+from social.normalize.models import ScrapeContext
 
 FIXTURES = Path(__file__).parent / "fixtures"
 client = TestClient(app)

@@ -1,25 +1,18 @@
+import bootstrap  # noqa: F401, E402
+
 from contextlib import asynccontextmanager
 import json
-import os
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
-os.environ.setdefault("BRIGHTDATA_API_TOKEN", "test-token")
-os.environ.setdefault("CF_ACCOUNT_ID", "test-account-id")
-os.environ.setdefault("CF_API_TOKEN", "test-cf-token")
-
-from crawl import CrawledPage, crawl_site_with_outcomes, scrape_page
-from process import (
-    ProcessPageRequest,
-    crawl_page_payload,
-    social_scrape_payload,
-)
-from social_normalize import ScrapeContext
+from crawl.crawler import CrawledPage, crawl_site_with_outcomes, scrape_page
 from fastapi.testclient import TestClient
-
 from main import app
+from process.mappers import crawl_page_payload, social_scrape_payload
+from process.schemas import ProcessPageRequest
+from social.normalize.models import ScrapeContext
 
 FIXTURES = Path(__file__).parent / "fixtures"
 client = TestClient(app)
@@ -132,7 +125,7 @@ class ScrapeEndpointTest(unittest.TestCase):
                 "title": "Hello",
             },
         )
-        with patch("main.scrape_page", new=AsyncMock(return_value=page)):
+        with patch("crawl.service.scrape_page", new=AsyncMock(return_value=page)):
             response = client.post("/crawl?url=https://example.com/page")
 
         self.assertEqual(response.status_code, 200)
@@ -150,7 +143,7 @@ class ScrapeEndpointTest(unittest.TestCase):
             request_url="https://www.linkedin.com/in/jane-doe",
             raw={"name": "Jane Doe"},
         )
-        with patch("main.scrape_linkedin_url", new=AsyncMock(return_value=ctx)):
+        with patch("social.scrape.service.scrape_linkedin_url", new=AsyncMock(return_value=ctx)):
             response = client.post("/linkedin?url=https://www.linkedin.com/in/jane-doe")
 
         self.assertEqual(response.status_code, 200)
@@ -170,7 +163,7 @@ class PartialCrawlEndpointTest(unittest.TestCase):
             metadata={"source_url": "https://example.com/ok"},
         )
         with patch(
-            "main.crawl_site_with_outcomes",
+            "crawl.service.crawl_site_with_outcomes",
             new=AsyncMock(
                 return_value=(
                     [page],
@@ -213,7 +206,7 @@ class EndpointLimiterTest(unittest.TestCase):
         original = getattr(client.app.state, "crawl_limiter", None)
         client.app.state.crawl_limiter = limiter
         try:
-            with patch("main.scrape_page", new=AsyncMock()) as scrape_mock:
+            with patch("crawl.service.scrape_page", new=AsyncMock()) as scrape_mock:
                 response = client.post("/crawl?url=https://example.com/page")
         finally:
             if had_existing:
@@ -270,7 +263,7 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
         )
 
         with patch(
-            "crawl._run_with_crawler",
+            "crawl.crawler._run_with_crawler",
             _mock_crawler_context(crawler_one, crawler_two),
         ):
             page = await scrape_page("https://example.com/page")
@@ -285,7 +278,7 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
         crawler_two = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
 
         with patch(
-            "crawl._run_with_crawler",
+            "crawl.crawler._run_with_crawler",
             _mock_crawler_context(crawler_one, crawler_two),
         ):
             with self.assertRaisesRegex(
@@ -315,7 +308,7 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        with patch("crawl._run_with_crawler", _mock_crawler_context(crawler)):
+        with patch("crawl.crawler._run_with_crawler", _mock_crawler_context(crawler)):
             pages, failures = await crawl_site_with_outcomes("https://example.com")
 
         self.assertEqual(len(pages), 1)
