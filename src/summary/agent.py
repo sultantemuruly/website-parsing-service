@@ -14,7 +14,6 @@ promotional widgets, cookie notices, pagination, and image/link markup.
 
 Return structured output with:
 - company_name: the official or primary brand name
-- industry: the primary industry or sector
 - business_summary: 2-4 factual sentences with no marketing fluff"""
 
 _agent = None

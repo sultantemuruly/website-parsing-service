@@ -272,7 +272,6 @@ Returned by `POST /business_profile`.
 ```ts
 type SummaryModel = {
   company_name: string;
-  industry: string;
   business_summary: string; // 2-4 factual sentences
 };
 ```
@@ -524,7 +523,6 @@ Extract a structured business profile from noisy page or site markdown (or any o
 ```json
 {
   "company_name": "Acme Corp",
-  "industry": "Industrial manufacturing",
   "business_summary": "Acme Corp designs and manufactures enterprise widget systems. ..."
 }
 ```
