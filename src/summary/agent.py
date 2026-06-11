@@ -13,8 +13,15 @@ Extract only facts supported by the provided context. Ignore navigation menus, r
 promotional widgets, cookie notices, pagination, and image/link markup.
 
 Return structured output with:
-- company_name: the official or primary brand name
-- business_summary: 2-4 factual sentences with no marketing fluff"""
+- general_description: 1-2 factual sentences describing what the business or product is, who it
+  serves, and what it does. Start with the brand name when identifiable.
+- key_advantages: the main competitive advantages or selling points, as short factual phrases
+  separated by periods (e.g. "Works 24/7. Setup in 5 minutes. CRM integration.").
+- main_goal: the primary conversion or business objective implied by the site, in one clear
+  sentence (e.g. sign up for a trial, book a demo, request a quote, contact sales).
+
+Use the same language as the source content when it is clearly identifiable; otherwise use English.
+Do not invent features, integrations, or goals that are not supported by the context."""
 
 _agent = None
 
