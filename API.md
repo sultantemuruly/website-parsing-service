@@ -271,8 +271,9 @@ Returned by `POST /business_profile`.
 
 ```ts
 type SummaryModel = {
-  company_name: string;
-  business_summary: string; // 2-4 factual sentences
+  general_description: string; // 1-2 factual sentences: what the business is, who it serves, what it does
+  key_advantages: string;      // main selling points as short phrases separated by periods
+  main_goal: string;           // primary conversion or business objective inferred from the site
 };
 ```
 
@@ -522,8 +523,9 @@ Extract a structured business profile from noisy page or site markdown (or any o
 
 ```json
 {
-  "company_name": "Acme Corp",
-  "business_summary": "Acme Corp designs and manufactures enterprise widget systems. ..."
+  "general_description": "Acme Corp designs and manufactures enterprise widget systems for industrial automation. The company serves large manufacturers across North America and Europe.",
+  "key_advantages": "24/7 support. Same-day shipping on standard orders. ISO 9001 certified. Custom integrations with major ERP platforms.",
+  "main_goal": "Request a quote for an enterprise widget deployment."
 }
 ```
 
