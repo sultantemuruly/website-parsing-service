@@ -1,3 +1,4 @@
+import re
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, TypeVar
@@ -12,6 +13,8 @@ from crawl.config import (
 )
 from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
 from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
+from crawl4ai.deep_crawling.filters import ContentTypeFilter, FilterChain
+from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from crawl4ai.models import CrawlResult
 
 apply_cdp_auth_patch()
@@ -25,6 +28,9 @@ _BROWSER_CLOSED_MARKERS = (
 )
 
 T = TypeVar("T")
+
+_LINKED_IMAGE_RE = re.compile(r"\[!\[([^\]]*)\]\([^)]*\)\]\(([^)]+)\)")
+_BARE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
 
 def browser_config() -> BrowserConfig:
@@ -42,26 +48,43 @@ def browser_config() -> BrowserConfig:
     )
 
 
-def _base_crawler_config() -> CrawlerRunConfig:
-    return CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
-        remove_overlay_elements=True,
-        page_timeout=PAGE_TIMEOUT_MS,
-        excluded_tags=["nav", "footer", "aside"],
+def _markdown_generator() -> DefaultMarkdownGenerator:
+    return DefaultMarkdownGenerator(
+        options={
+            "ignore_images": True,
+            "ignore_links": False,
+        }
     )
+
+
+def _common_crawl_kwargs() -> dict[str, Any]:
+    return {
+        "cache_mode": CacheMode.BYPASS,
+        "remove_overlay_elements": True,
+        "page_timeout": PAGE_TIMEOUT_MS,
+        "excluded_tags": ["nav", "footer", "aside"],
+        "exclude_all_images": True,
+        "markdown_generator": _markdown_generator(),
+    }
+
+
+def _site_crawl_filter_chain() -> FilterChain:
+    return FilterChain([ContentTypeFilter(allowed_types=["text/html"])])
+
+
+def _base_crawler_config() -> CrawlerRunConfig:
+    return CrawlerRunConfig(**_common_crawl_kwargs())
 
 
 def _site_crawl_config(limit: int) -> CrawlerRunConfig:
     return CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
-        remove_overlay_elements=True,
-        page_timeout=PAGE_TIMEOUT_MS,
-        excluded_tags=["nav", "footer", "aside"],
+        **_common_crawl_kwargs(),
         semaphore_count=SITE_CRAWL_SEMAPHORE_COUNT,
         deep_crawl_strategy=BFSDeepCrawlStrategy(
             max_depth=MAX_DISCOVERY_DEPTH,
             max_pages=limit,
             include_external=False,
+            filter_chain=_site_crawl_filter_chain(),
         ),
     )
 
@@ -83,10 +106,20 @@ async def _run_with_crawler():
             await crawler.close()
 
 
+def _normalize_image_markdown(text: str) -> str:
+    text = _LINKED_IMAGE_RE.sub(r"[\1](\2)", text)
+    return _BARE_IMAGE_RE.sub("", text)
+
+
 def _markdown_text(result: CrawlResult) -> str:
     if result.markdown is None:
         return ""
-    return str(result.markdown)
+    md = result.markdown
+    if hasattr(md, "raw_markdown"):
+        text = md.raw_markdown or ""
+    else:
+        text = str(md)
+    return _normalize_image_markdown(text)
 
 
 def result_to_page(result: CrawlResult) -> CrawledPage:

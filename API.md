@@ -2,6 +2,8 @@
 
 FastAPI service that scrapes websites (Crawl4AI + Cloudflare Browser Run over CDP) and social profiles (Bright Data), optionally splits content into RAG-ready chunks, and can summarize business context via an LLM.
 
+Web crawl responses return **image-stripped markdown** with **hyperlinks preserved** (product pages, news, YouTube, partner sites, etc.) — cleaning happens at crawl time, not in `/process/page`.
+
 **Source layout:** application code lives under `src/` (see `.cursor/skills/layered-service/SKILL.md`). Run via `start.sh` (`PYTHONPATH=src`, `uvicorn main:app`).
 
 **Base URL:** `http://localhost:8000` (override with `PORT` in `start.sh`)
@@ -173,9 +175,11 @@ type Chunk = {
 
 Returned by `/crawl` and entries in `/crawl/site*`. **Same shape as** `POST /process/page` body.
 
+`markdown` is **cleaned at crawl time** for RAG: image references (`![alt](url)`) are removed; text hyperlinks (`[label](url)`) are kept, including external links (e.g. YouTube, partner sites). The same cleaned string is what `/process/page` chunks when you pass a scrape payload through unchanged.
+
 ```ts
 type CrawlPagePayload = {
-  markdown: string;
+  markdown: string; // image-stripped; navigation/content links preserved
   url: string;
   title?: string;
   language?: string;
@@ -281,6 +285,19 @@ type SummaryModel = {
 
 ## Web endpoints
 
+Crawl routes produce markdown optimized for vector DB ingest:
+
+| Removed at crawl | Preserved |
+|------------------|-----------|
+| `<img>` elements and `![alt](url)` image markdown (including same-domain CDN assets) | `[text](url)` hyperlinks — internal pages, products, news, docs, YouTube, etc. |
+| Non-HTML URLs during site BFS discovery (images, PDFs, downloads) | HTML pages only are enqueued and crawled |
+
+**Not cleaned:** markdown sent directly to `POST /process/page` without scraping (manual paste or stored payloads from other sources) — only `/crawl*` responses are filtered.
+
+Linked-image patterns (`[![thumb](img.png)](real-url)`) are normalized to `[thumb](real-url)` when present.
+
+---
+
 ### `GET /`
 
 Health check.
@@ -293,7 +310,7 @@ Health check.
 
 ### `POST /crawl`
 
-Scrape one URL to markdown.
+Scrape one URL to markdown (images stripped, links preserved — see **Web endpoints** above).
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -309,6 +326,8 @@ Scrape one URL to markdown.
 
 BFS site crawl: up to **`CRAWL_MAX_PAGES`** pages (default **25**), max depth **`CRAWL_MAX_DEPTH`** (default **1**), same origin only. Internal Crawl4AI fan-out is capped by `CRAWL_SITE_SEMAPHORE_COUNT` (default **1**).
 
+Only **HTML** pages are discovered and crawled — asset URLs (images, PDFs, etc.) are skipped so crawl budget is not spent on non-page resources. Markdown on each page is image-stripped with links preserved (same rules as `/crawl`).
+
 | Query | Required | Description |
 |-------|----------|-------------|
 | `url` | yes | Seed URL |
@@ -323,7 +342,7 @@ BFS site crawl: up to **`CRAWL_MAX_PAGES`** pages (default **25**), max depth **
 
 ### `POST /crawl/site/partial`
 
-Same limits as `/crawl/site`, but returns failures per URL. This is the recommended endpoint for site crawls on constrained deployments because successful pages are preserved even if the browser dies partway through a run.
+Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL. This is the recommended endpoint for site crawls on constrained deployments because successful pages are preserved even if the browser dies partway through a run.
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -419,6 +438,8 @@ Unknown `(platform, scraper_type)` at process time → `502` `No extractor for �
 ### `POST /process/page`
 
 Chunk page markdown without scraping. Accepts `CrawlPagePayload`.
+
+Does **not** apply crawl-stage image filtering — it chunks the `markdown` you send as-is. Use `/crawl*` first if you want image-stripped markdown; only needed when re-processing a stored scrape payload or when you control the input text yourself.
 
 **Body (example):**
 
@@ -540,8 +561,8 @@ Typical flow: scrape → `/process/page` (optional, for chunks) → concatenate 
 1. **Encode query URLs** — always `encodeURIComponent(url)` on scrape routes.
 2. **Long timeouts** — crawls and social scrapes can take minutes; show loading state.
 3. **Store scrape payloads** — you can call `/process/*` later without re-scraping.
-4. **RAG ingestion** — use `chunks[]` from process responses; each chunk has `source_url` and `chunk_index`.
-5. **Full content for UI** — use `markdown` (web) or `raw` (social) from scrape or process responses.
+4. **RAG ingestion** — use `chunks[]` from process responses; each chunk has `source_url` and `chunk_index`. Scrape payloads from `/crawl*` already have image noise removed from `markdown`.
+5. **Full content for UI** — use `markdown` (web) or `raw` (social) from scrape or process responses. Web `markdown` from crawl routes omits images but keeps links.
 6. **Site crawl UX** — prefer `/crawl/site/partial` if you need to surface failed URLs; use `/crawl/site` if you only care about successes.
 7. **No chunks on scrape** — if an older client expected `chunks` on `/crawl` or `/linkedin`, migrate to the two-step flow above.
 8. **Business summary** — `/business_profile` is independent of scrape/process; pass markdown or other text in `context`. Allow extra time for the LLM call.

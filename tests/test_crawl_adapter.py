@@ -3,7 +3,13 @@ import bootstrap  # noqa: F401, E402
 import unittest
 from types import SimpleNamespace
 
-from crawl.crawler import CrawledPage, _classify_site_result, result_to_page
+from crawl.crawler import (
+    CrawledPage,
+    _classify_site_result,
+    _markdown_text,
+    _normalize_image_markdown,
+    result_to_page,
+)
 
 
 def _make_result(**kwargs):
@@ -43,6 +49,18 @@ class ResultToPageTest(unittest.TestCase):
 
         self.assertEqual(page.markdown, "# From object")
 
+    def test_uses_raw_markdown_from_generation_result(self):
+        class MarkdownResult:
+            raw_markdown = "[More](https://fbroker.kz/products/its)"
+            fit_markdown = "filtered"
+
+            def __str__(self) -> str:
+                return self.fit_markdown
+
+        page = result_to_page(_make_result(markdown=MarkdownResult()))
+
+        self.assertEqual(page.markdown, "[More](https://fbroker.kz/products/its)")
+
     def test_empty_markdown(self):
         page = result_to_page(_make_result(markdown=None))
 
@@ -57,6 +75,37 @@ class ResultToPageTest(unittest.TestCase):
                 "source_url": "https://example.com/page",
                 "title": "Only title",
             },
+        )
+
+
+class NormalizeImageMarkdownTest(unittest.TestCase):
+    def test_linked_image_becomes_text_link(self):
+        text = "[![thumb](img.png)](https://fbroker.kz/products/its)"
+        self.assertEqual(
+            _normalize_image_markdown(text),
+            "[thumb](https://fbroker.kz/products/its)",
+        )
+
+    def test_strips_bare_images_but_preserves_links(self):
+        text = (
+            "![slide-0](https://fbroker.kz/file/x.png)\n\n"
+            "[More](https://fbroker.kz/products/its)"
+        )
+        self.assertEqual(
+            _normalize_image_markdown(text),
+            "\n\n[More](https://fbroker.kz/products/its)",
+        )
+
+    def test_markdown_text_applies_normalization(self):
+        result = _make_result(
+            markdown=(
+                "![slide-0](https://fbroker.kz/file/x.png)\n\n"
+                "[More](https://fbroker.kz/products/its)"
+            )
+        )
+        self.assertEqual(
+            _markdown_text(result),
+            "\n\n[More](https://fbroker.kz/products/its)",
         )
 
 
