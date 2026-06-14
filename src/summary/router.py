@@ -8,8 +8,6 @@ router = APIRouter(tags=["summary"])
 
 @router.post("/business_profile")
 async def business_profile(body: BusinessProfileRequest) -> SummaryModel:
-    if not body.context.strip():
-        raise HTTPException(status_code=400, detail="context is required")
     try:
         return await summarize_business_profile(body.context)
     except ValueError as e:

@@ -8,4 +8,7 @@ async def summarize_business_profile(context: str) -> SummaryModel:
             {"role": "user", "content": context}
         ]},
     )
-    return response["structured_response"]
+    result = response.get("structured_response")
+    if result is None:
+        raise ValueError("LLM did not return structured output")
+    return result

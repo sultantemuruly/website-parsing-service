@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+CONTEXT_MAX_LENGTH = 200_000
 
 
 class SummaryModel(BaseModel):
@@ -25,5 +27,15 @@ class SummaryModel(BaseModel):
 class BusinessProfileRequest(BaseModel):
     context: str = Field(
         min_length=1,
+        max_length=CONTEXT_MAX_LENGTH,
         description="Raw page or site markdown, or other text about the business to summarize",
     )
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def strip_and_require_non_empty(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+        if isinstance(value, str) and not value:
+            raise ValueError("context is required")
+        return value

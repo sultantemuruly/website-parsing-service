@@ -125,8 +125,8 @@ All error responses use FastAPI’s default shape:
 
 | Status | When |
 |--------|------|
-| `400` | Missing `url` query param; empty / whitespace-only `markdown` on `/process/page`; empty / whitespace-only `context` on `/business_profile` |
-| `422` | Invalid JSON body (missing required fields, wrong types) on `/process/*` or `/business_profile` |
+| `400` | Missing `url` query param; empty / whitespace-only `markdown` on `/process/page` |
+| `422` | Invalid JSON body (missing required fields, wrong types, whitespace-only or over-length `context` on `/business_profile`) on `/process/*` or `/business_profile` |
 | `429` | Crawler is saturated and could not acquire a slot in time (`/crawl*`) |
 | `502` | Scrape failed, unsupported social URL, Bright Data error, no extractable social content, or LLM / summary failure |
 | `500` | Unexpected server error (e.g. site crawl engine threw before returning any results) |
@@ -536,7 +536,7 @@ Extract a structured business profile from noisy page or site markdown (or any o
 
 | Field | Required | Notes |
 |-------|----------|--------|
-| `context` | yes | Non-empty after `.trim()` |
+| `context` | yes | Non-empty after trim; max **200,000** characters |
 
 **`200`:** `SummaryModel`
 
@@ -550,7 +550,7 @@ Extract a structured business profile from noisy page or site markdown (or any o
 }
 ```
 
-**Errors:** `422` validation (missing fields); `400` whitespace-only `context`; `502` LLM or structured-output failure (e.g. missing `OPENAI_API_KEY`); `500` other.
+**Errors:** `422` validation (missing fields, whitespace-only `context`, or `context` over 200,000 characters); `502` LLM or structured-output failure (e.g. missing `OPENAI_API_KEY`); `500` other.
 
 Typical flow: scrape → `/process/page` (optional, for chunks) → concatenate or pick `markdown` → `/business_profile`.
 
