@@ -7,7 +7,8 @@ class SummaryModel(BaseModel):
     general_description: str = Field(
         description=(
             "1-2 factual sentences describing what the business or product is, who it serves, "
-            "and what it does; lead with the brand name when identifiable"
+            "and what it does; lead with the brand name when identifiable. Describe the "
+            "business itself, not the webpage — no page layout, sections, videos, or UI elements."
         ),
     )
     key_advantages: str = Field(
