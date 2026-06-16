@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 import json
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 from crawl.crawler import CrawledPage, crawl_site_with_outcomes, scrape_page
@@ -217,98 +216,80 @@ class EndpointLimiterTest(unittest.TestCase):
         self.assertEqual(response.status_code, 429)
         self.assertEqual(response.json()["detail"], "Crawler is busy, retry later")
         scrape_mock.assert_not_called()
-
-
-def _mock_crawler_context(*crawlers):
-    queue = list(crawlers)
-
-    @asynccontextmanager
-    async def _run_with_crawler():
-        if not queue:
-            raise RuntimeError("no crawler available")
-        crawler = queue.pop(0)
-        yield crawler
-
-    return _run_with_crawler
-
-
-class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
-    def _crawl_result(
-        self,
-        *,
-        success: bool,
-        url: str,
-        markdown: str = "",
-        error_message: str | None = None,
-    ):
-        return SimpleNamespace(
-            success=success,
-            url=url,
-            markdown=markdown,
-            metadata={"title": "Example"} if success else {},
-            error_message=error_message,
-        )
-
-    async def test_scrape_page_retries_once_after_browser_closed_exception(self):
-        closed_error = RuntimeError("Target page, context or browser has been closed")
-        crawler_one = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
-        crawler_two = SimpleNamespace(
-            arun=AsyncMock(
-                return_value=self._crawl_result(
-                    success=True,
-                    url="https://example.com/page",
-                    markdown="# Hello",
-                )
-            )
-        )
-
+class BrowserRunAdapterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_scrape_page_uses_markdown_endpoint(self):
         with patch(
-            "crawl.crawler._run_with_crawler",
-            _mock_crawler_context(crawler_one, crawler_two),
-        ):
+            "crawl.crawler._browser_run_request",
+            new=AsyncMock(
+                return_value="![hero](https://example.com/hero.png)\n\n[More](https://example.com)"
+            ),
+        ) as request_mock:
             page = await scrape_page("https://example.com/page")
 
-        self.assertEqual(page.markdown, "# Hello")
-        self.assertEqual(crawler_one.arun.await_count, 1)
-        self.assertEqual(crawler_two.arun.await_count, 1)
+        self.assertEqual(page.metadata["source_url"], "https://example.com/page")
+        self.assertEqual(page.markdown, "\n\n[More](https://example.com)")
+        request_mock.assert_awaited_once()
+        args = request_mock.await_args.args
+        kwargs = request_mock.await_args.kwargs
+        self.assertEqual(args, ("POST", "/markdown"))
+        self.assertEqual(kwargs["payload"]["url"], "https://example.com/page")
 
-    async def test_scrape_page_does_not_retry_forever(self):
-        closed_error = RuntimeError("Target page, context or browser has been closed")
-        crawler_one = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
-        crawler_two = SimpleNamespace(arun=AsyncMock(side_effect=closed_error))
-
-        with patch(
-            "crawl.crawler._run_with_crawler",
-            _mock_crawler_context(crawler_one, crawler_two),
-        ):
-            with self.assertRaisesRegex(
-                ValueError,
-                "Target page, context or browser has been closed",
-            ):
-                await scrape_page("https://example.com/page")
-
-        self.assertEqual(crawler_one.arun.await_count, 1)
-        self.assertEqual(crawler_two.arun.await_count, 1)
-
-    async def test_site_partial_results_trigger_recycle_without_dropping_successes(self):
-        crawler = SimpleNamespace(
-            arun=AsyncMock(
-                return_value=[
-                    self._crawl_result(
-                        success=True,
-                        url="https://example.com/ok",
-                        markdown="# OK",
-                    ),
-                    self._crawl_result(
-                        success=False,
-                        url="https://example.com/bad",
-                        error_message="Target page, context or browser has been closed",
-                    ),
-                ]
-            )
+    async def test_crawl_site_collects_pages_and_failures_from_terminal_job(self):
+        request_mock = AsyncMock(
+            side_effect=[
+                {"id": "job-123"},
+                {"status": "running", "records": []},
+                {"status": "completed", "records": []},
+                {
+                    "status": "completed",
+                    "records": [
+                        {
+                            "status": "completed",
+                            "url": "https://example.com/ok",
+                            "markdown": "# OK",
+                            "metadata": {"title": "OK"},
+                        },
+                        {
+                            "status": "errored",
+                            "url": "https://example.com/bad",
+                            "error": "No markdown",
+                        },
+                    ],
+                },
+            ]
         )
 
-        with patch("crawl.crawler._run_with_crawler", _mock_crawler_context(crawler)):
+        with patch("crawl.crawler._browser_run_request", new=request_mock):
+            pages, failures = await crawl_site_with_outcomes("https://example.com")
+
+        self.assertEqual(len(pages), 1)
+        self.assertEqual(pages[0].metadata["source_url"], "https://example.com/ok")
+        self.assertEqual(pages[0].metadata["title"], "OK")
+        self.assertEqual(
+            failures,
+            [{"url": "https://example.com/bad", "error": "No markdown"}],
+        )
+
+    async def test_crawl_site_reports_terminal_job_failure_without_losing_pages(self):
+        request_mock = AsyncMock(
+            side_effect=[
+                {"id": "job-123"},
+                {"status": "running", "records": []},
+                {"status": "cancelled_due_to_limits", "records": []},
+                {
+                    "status": "cancelled_due_to_limits",
+                    "records": [
+                        {
+                            "status": "completed",
+                            "url": "https://example.com/ok",
+                            "markdown": "# OK",
+                        }
+                    ],
+                },
+            ]
+        )
+
+        with patch("crawl.crawler._browser_run_request", new=request_mock):
             pages, failures = await crawl_site_with_outcomes("https://example.com")
 
         self.assertEqual(len(pages), 1)
@@ -317,8 +298,8 @@ class CrawlerRecoveryTest(unittest.IsolatedAsyncioTestCase):
             failures,
             [
                 {
-                    "url": "https://example.com/bad",
-                    "error": "Target page, context or browser has been closed",
+                    "url": "https://example.com",
+                    "error": "Crawl job ended with status: cancelled_due_to_limits",
                 }
             ],
         )

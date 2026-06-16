@@ -1,92 +1,36 @@
+import asyncio
+import json
 import re
-from contextlib import asynccontextmanager, suppress
+import time
 from dataclasses import dataclass
-from typing import Any, Awaitable, Callable, TypeVar
+from email.message import Message
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
-from clients.cdp_patch import apply_cdp_auth_patch
 from crawl.config import (
-    CF_CDP_URL,
+    CF_API_TOKEN,
+    CF_BROWSER_RUN_BASE_URL,
+    CF_CRAWL_PURPOSES,
+    CRAWL_JOB_POLL_INTERVAL_MS,
+    CRAWL_JOB_TIMEOUT_MS,
     MAX_CRAWL_PAGES,
     MAX_DISCOVERY_DEPTH,
-    PAGE_TIMEOUT_MS,
-    SITE_CRAWL_SEMAPHORE_COUNT,
-)
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CacheMode, CrawlerRunConfig
-from crawl4ai.deep_crawling import BFSDeepCrawlStrategy
-from crawl4ai.deep_crawling.filters import ContentTypeFilter, FilterChain
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-from crawl4ai.models import CrawlResult
-
-apply_cdp_auth_patch()
-
-_BROWSER_CLOSED_MARKERS = (
-    "target page, context or browser has been closed",
-    "browser has been closed",
-    "context has been closed",
-    "page has been closed",
-    "target closed",
 )
 
-T = TypeVar("T")
+_REQUEST_TIMEOUT_SECONDS = 60
+_MAX_RATE_LIMIT_RETRIES = 3
+_CRAWL_TERMINAL_STATUSES = {
+    "completed",
+    "errored",
+    "cancelled_by_user",
+    "cancelled_due_to_timeout",
+    "cancelled_due_to_limits",
+}
 
 _LINKED_IMAGE_RE = re.compile(r"\[!\[([^\]]*)\]\([^)]*\)\]\(([^)]+)\)")
 _BARE_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-
-
-def browser_config() -> BrowserConfig:
-    return BrowserConfig(
-        browser_mode="custom",
-        cdp_url=CF_CDP_URL,
-        cdp_cleanup_on_close=True,
-        cdp_close_delay=1.0,
-        cache_cdp_connection=False,
-        create_isolated_context=True,
-        headless=True,
-        viewport_width=1920,
-        viewport_height=1080,
-        max_pages_before_recycle=0,
-    )
-
-
-def _markdown_generator() -> DefaultMarkdownGenerator:
-    return DefaultMarkdownGenerator(
-        options={
-            "ignore_images": True,
-            "ignore_links": False,
-        }
-    )
-
-
-def _common_crawl_kwargs() -> dict[str, Any]:
-    return {
-        "cache_mode": CacheMode.BYPASS,
-        "remove_overlay_elements": True,
-        "page_timeout": PAGE_TIMEOUT_MS,
-        "excluded_tags": ["nav", "footer", "aside"],
-        "exclude_all_images": True,
-        "markdown_generator": _markdown_generator(),
-    }
-
-
-def _site_crawl_filter_chain() -> FilterChain:
-    return FilterChain([ContentTypeFilter(allowed_types=["text/html"])])
-
-
-def _base_crawler_config() -> CrawlerRunConfig:
-    return CrawlerRunConfig(**_common_crawl_kwargs())
-
-
-def _site_crawl_config(limit: int) -> CrawlerRunConfig:
-    return CrawlerRunConfig(
-        **_common_crawl_kwargs(),
-        semaphore_count=SITE_CRAWL_SEMAPHORE_COUNT,
-        deep_crawl_strategy=BFSDeepCrawlStrategy(
-            max_depth=MAX_DISCOVERY_DEPTH,
-            max_pages=limit,
-            include_external=False,
-            filter_chain=_site_crawl_filter_chain(),
-        ),
-    )
 
 
 @dataclass
@@ -95,15 +39,10 @@ class CrawledPage:
     metadata: dict[str, Any]
 
 
-@asynccontextmanager
-async def _run_with_crawler():
-    crawler = AsyncWebCrawler(config=browser_config(), thread_safe=True)
-    await crawler.start()
-    try:
-        yield crawler
-    finally:
-        with suppress(Exception):
-            await crawler.close()
+class _RateLimitError(RuntimeError):
+    def __init__(self, message: str, retry_after_seconds: float):
+        super().__init__(message)
+        self.retry_after_seconds = retry_after_seconds
 
 
 def _normalize_image_markdown(text: str) -> str:
@@ -111,119 +50,339 @@ def _normalize_image_markdown(text: str) -> str:
     return _BARE_IMAGE_RE.sub("", text)
 
 
-def _markdown_text(result: CrawlResult) -> str:
-    if result.markdown is None:
-        return ""
-    md = result.markdown
-    if hasattr(md, "raw_markdown"):
-        text = md.raw_markdown or ""
-    else:
-        text = str(md)
-    return _normalize_image_markdown(text)
+def _metadata_dict(record: dict[str, Any]) -> dict[str, Any]:
+    metadata = record.get("metadata")
+    if isinstance(metadata, dict):
+        return metadata
+    return {}
 
 
-def result_to_page(result: CrawlResult) -> CrawledPage:
-    raw_meta = result.metadata or {}
-    metadata: dict[str, Any] = {"source_url": result.url}
-    for key in ("title", "language", "description"):
-        if value := raw_meta.get(key):
-            metadata[key] = value
-    return CrawledPage(markdown=_markdown_text(result), metadata=metadata)
-
-
-def _browser_closed_message(error: object) -> str | None:
-    text = str(error).strip()
-    lowered = text.lower()
-    for marker in _BROWSER_CLOSED_MARKERS:
-        if marker in lowered:
-            return text
-    return None
-
-
-def _normalize_results(result: CrawlResult | list[CrawlResult]) -> list[CrawlResult]:
-    if isinstance(result, list):
-        return result
-    return [result]
-
-
-def _all_results_browser_closed(result: CrawlResult | list[CrawlResult]) -> bool:
-    results = _normalize_results(result)
-    return bool(results) and all(
-        (not item.success) and _browser_closed_message(item.error_message or "")
-        for item in results
+def _record_url(record: dict[str, Any], fallback: str) -> str:
+    metadata = _metadata_dict(record)
+    return (
+        str(record.get("url") or "")
+        or str(metadata.get("source_url") or "")
+        or str(metadata.get("sourceURL") or "")
+        or fallback
     )
 
 
-async def _run_with_recovery(
-    operation: Callable[[AsyncWebCrawler], Awaitable[CrawlResult | list[CrawlResult]]],
-) -> CrawlResult | list[CrawlResult]:
-    for attempt in range(2):
-        async with _run_with_crawler() as crawler:
-            try:
-                result = await operation(crawler)
-            except Exception as exc:
-                if _browser_closed_message(exc) and attempt == 0:
-                    continue
-                if _browser_closed_message(exc):
-                    raise ValueError(str(exc)) from exc
-                raise
+def _markdown_text(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return _normalize_image_markdown(value)
+    if isinstance(value, dict):
+        text = value.get("markdown") or value.get("raw_markdown") or value.get("rawMarkdown")
+        if text is None:
+            return ""
+        return _normalize_image_markdown(str(text))
+    return _normalize_image_markdown(str(value))
 
-            if _all_results_browser_closed(result) and attempt == 0:
-                continue
 
+def record_to_page(record: dict[str, Any]) -> CrawledPage:
+    metadata = _metadata_dict(record)
+    page_metadata: dict[str, Any] = {
+        "source_url": _record_url(record, ""),
+    }
+    for key in ("title", "language", "description"):
+        value = metadata.get(key) or record.get(key)
+        if value:
+            page_metadata[key] = value
+    return CrawledPage(
+        markdown=_markdown_text(record.get("markdown")),
+        metadata=page_metadata,
+    )
+
+
+def _record_status(record: dict[str, Any]) -> str:
+    status = record.get("status")
+    if status:
+        return str(status)
+    metadata = _metadata_dict(record)
+    if metadata.get("status"):
+        return str(metadata["status"])
+    return ""
+
+
+def _record_error(record: dict[str, Any]) -> str:
+    metadata = _metadata_dict(record)
+    for key in ("error", "message"):
+        value = record.get(key)
+        if value:
+            return str(value)
+    for key in ("error", "message", "statusText"):
+        value = metadata.get(key)
+        if value:
+            return str(value)
+    status = _record_status(record)
+    if status:
+        return f"Crawl status: {status}"
+    return "Crawl failed"
+
+
+def _classify_site_record(
+    record: dict[str, Any], seed_url: str
+) -> tuple[CrawledPage | None, dict[str, str] | None]:
+    page_url = _record_url(record, seed_url)
+    if _record_status(record) not in {"", "completed"}:
+        return None, {"url": page_url, "error": _record_error(record)}
+
+    markdown = _markdown_text(record.get("markdown"))
+    if not markdown.strip():
+        return None, {"url": page_url, "error": "No markdown"}
+
+    page = record_to_page({**record, "url": page_url, "markdown": markdown})
+    return page, None
+
+
+def _auth_headers() -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {CF_API_TOKEN}",
+        "Content-Type": "application/json",
+    }
+
+
+def _request_url(path: str, query: dict[str, Any] | None = None) -> str:
+    url = f"{CF_BROWSER_RUN_BASE_URL}{path}"
+    if not query:
+        return url
+    encoded = urlencode({k: v for k, v in query.items() if v is not None})
+    return f"{url}?{encoded}" if encoded else url
+
+
+def _load_json_bytes(raw: bytes) -> Any:
+    if not raw:
+        return {}
+    return json.loads(raw.decode("utf-8"))
+
+
+def _error_message(payload: Any, fallback: str) -> str:
+    if isinstance(payload, dict):
+        errors = payload.get("errors")
+        if isinstance(errors, list):
+            messages = []
+            for item in errors:
+                if isinstance(item, dict) and item.get("message"):
+                    messages.append(str(item["message"]))
+                elif item:
+                    messages.append(str(item))
+            if messages:
+                return "; ".join(messages)
+
+        for key in ("message", "error"):
+            value = payload.get(key)
+            if value:
+                return str(value)
+
+        result = payload.get("result")
+        if isinstance(result, dict):
+            for key in ("message", "error"):
+                value = result.get(key)
+                if value:
+                    return str(value)
+
+    return fallback
+
+
+def _retry_after_seconds(headers: Message | None) -> float:
+    if headers is None:
+        return 1.0
+    value = headers.get("Retry-After")
+    if not value:
+        return 1.0
+    try:
+        return max(float(value), 0.1)
+    except ValueError:
+        return 1.0
+
+
+def _unwrap_result(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        if payload.get("success") is False:
+            raise ValueError(_error_message(payload, "Cloudflare Browser Run request failed"))
+        if "result" in payload:
+            return payload["result"]
+    return payload
+
+
+def _browser_run_request_sync(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    query: dict[str, Any] | None = None,
+) -> Any:
+    body = None if payload is None else json.dumps(payload).encode("utf-8")
+    request = Request(
+        _request_url(path, query),
+        data=body,
+        headers=_auth_headers(),
+        method=method,
+    )
+
+    try:
+        with urlopen(request, timeout=_REQUEST_TIMEOUT_SECONDS) as response:
+            return _unwrap_result(_load_json_bytes(response.read()))
+    except HTTPError as exc:
+        payload = _load_json_bytes(exc.read())
+        message = _error_message(payload, f"Cloudflare Browser Run error ({exc.code})")
+        if exc.code == 429:
+            raise _RateLimitError(message, _retry_after_seconds(exc.headers)) from exc
+        raise ValueError(message) from exc
+    except URLError as exc:
+        raise ValueError(f"Cloudflare Browser Run request failed: {exc.reason}") from exc
+
+
+async def _browser_run_request(
+    method: str,
+    path: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    query: dict[str, Any] | None = None,
+) -> Any:
+    for attempt in range(_MAX_RATE_LIMIT_RETRIES):
+        try:
+            return await asyncio.to_thread(
+                _browser_run_request_sync,
+                method,
+                path,
+                payload=payload,
+                query=query,
+            )
+        except _RateLimitError as exc:
+            if attempt == _MAX_RATE_LIMIT_RETRIES - 1:
+                raise ValueError(str(exc)) from exc
+            await asyncio.sleep(exc.retry_after_seconds)
+
+    raise RuntimeError("unreachable")
+
+
+def _markdown_request_payload(url: str) -> dict[str, Any]:
+    return {
+        "url": url,
+        "gotoOptions": {"waitUntil": "networkidle2"},
+    }
+
+
+def _crawl_request_payload(url: str, limit: int) -> dict[str, Any]:
+    return {
+        "url": url,
+        "limit": limit,
+        "depth": MAX_DISCOVERY_DEPTH,
+        "render": True,
+        "source": "all",
+        "formats": ["markdown"],
+        "crawlPurposes": CF_CRAWL_PURPOSES,
+        "gotoOptions": {"waitUntil": "networkidle2"},
+    }
+
+
+def _crawl_job_status(result: dict[str, Any]) -> str:
+    return str(result.get("status") or "")
+
+
+def _crawl_job_error(result: dict[str, Any]) -> str:
+    for key in ("error", "message"):
+        value = result.get(key)
+        if value:
+            return str(value)
+    status = _crawl_job_status(result)
+    if status:
+        return f"Crawl job ended with status: {status}"
+    return "Crawl job failed"
+
+
+async def _cancel_crawl_job(job_id: str) -> None:
+    try:
+        await _browser_run_request("DELETE", f"/crawl/{job_id}")
+    except ValueError:
+        return
+
+
+async def _start_crawl_job(url: str, limit: int) -> str:
+    result = await _browser_run_request("POST", "/crawl", payload=_crawl_request_payload(url, limit))
+    job_id = result.get("id") if isinstance(result, dict) else None
+    if not job_id:
+        raise ValueError("Cloudflare Browser Run did not return a crawl job id")
+    return str(job_id)
+
+
+async def _wait_for_crawl_job(job_id: str) -> dict[str, Any]:
+    deadline = time.monotonic() + (CRAWL_JOB_TIMEOUT_MS / 1000)
+
+    while True:
+        result = await _browser_run_request("GET", f"/crawl/{job_id}", query={"limit": 1})
+        if not isinstance(result, dict):
+            raise ValueError("Cloudflare Browser Run returned an invalid crawl job payload")
+
+        if _crawl_job_status(result) in _CRAWL_TERMINAL_STATUSES:
             return result
 
-    raise RuntimeError("Crawler recovery failed")
+        if time.monotonic() >= deadline:
+            await _cancel_crawl_job(job_id)
+            raise ValueError(f"Crawl job timed out after {CRAWL_JOB_TIMEOUT_MS}ms")
+
+        await asyncio.sleep(CRAWL_JOB_POLL_INTERVAL_MS / 1000)
+
+
+async def _fetch_all_crawl_records(job_id: str) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    cursor: str | None = None
+    records: list[dict[str, Any]] = []
+    final_result: dict[str, Any] | None = None
+
+    while True:
+        query: dict[str, Any] = {"limit": MAX_CRAWL_PAGES}
+        if cursor:
+            query["cursor"] = cursor
+
+        result = await _browser_run_request("GET", f"/crawl/{job_id}", query=query)
+        if not isinstance(result, dict):
+            raise ValueError("Cloudflare Browser Run returned an invalid crawl result payload")
+
+        final_result = result
+        page_records = result.get("records")
+        if isinstance(page_records, list):
+            for item in page_records:
+                if isinstance(item, dict):
+                    records.append(item)
+
+        cursor = result.get("cursor")
+        if not cursor:
+            return final_result, records
 
 
 async def scrape_page(url: str) -> CrawledPage:
-    result = await _run_with_recovery(
-        lambda crawler: crawler.arun(url, config=_base_crawler_config())
-    )
-    if isinstance(result, list):
-        result = result[0]
-    if not result.success:
-        raise ValueError(result.error_message or "Crawl failed")
-    page = result_to_page(result)
-    if not page.markdown.strip():
+    result = await _browser_run_request("POST", "/markdown", payload=_markdown_request_payload(url))
+    markdown = _markdown_text(result)
+    if not markdown.strip():
         raise ValueError("No markdown")
-    return page
-
-
-def _result_url(result: CrawlResult, fallback: str) -> str:
-    return result.url or fallback
-
-
-def _classify_site_result(
-    result: CrawlResult, seed_url: str
-) -> tuple[CrawledPage | None, dict[str, str] | None]:
-    page_url = _result_url(result, seed_url)
-    if not result.success:
-        return None, {"url": page_url, "error": result.error_message or "Crawl failed"}
-    if not _markdown_text(result).strip():
-        return None, {"url": page_url, "error": "No markdown"}
-    return result_to_page(result), None
+    return CrawledPage(markdown=markdown, metadata={"source_url": url})
 
 
 async def crawl_site_with_outcomes(
     url: str, *, limit: int = MAX_CRAWL_PAGES
 ) -> tuple[list[CrawledPage], list[dict[str, str]]]:
-    """Return successful pages and per-URL failures from a site crawl."""
     capped_limit = min(max(limit, 1), MAX_CRAWL_PAGES)
-    results = await _run_with_recovery(
-        lambda crawler: crawler.arun(url, config=_site_crawl_config(capped_limit))
-    )
-    if not isinstance(results, list):
-        results = [results]
+    job_id = await _start_crawl_job(url, capped_limit)
+    terminal_result = await _wait_for_crawl_job(job_id)
+    final_result, records = await _fetch_all_crawl_records(job_id)
 
     pages: list[CrawledPage] = []
     failures: list[dict[str, str]] = []
-    for result in results:
-        page, failure = _classify_site_result(result, url)
+    for record in records:
+        page, failure = _classify_site_record(record, url)
         if page is not None:
             pages.append(page)
         elif failure is not None:
             failures.append(failure)
+
+    terminal_status = _crawl_job_status(terminal_result)
+    if terminal_status != "completed":
+        job_failure = {"url": url, "error": _crawl_job_error(final_result)}
+        if job_failure not in failures:
+            failures.append(job_failure)
+
     return pages, failures
 
 

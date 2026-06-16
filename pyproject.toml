@@ -5,7 +5,6 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
-    "crawl4ai>=0.7.4",
     "fastapi[standard]>=0.136.1",
     "nltk>=3.9.4",
     "python-dotenv>=1.2.2",

@@ -9,13 +9,20 @@ if not CF_ACCOUNT_ID:
 if not CF_API_TOKEN:
     raise ValueError("CF_API_TOKEN is not set")
 
-CF_BROWSER_KEEP_ALIVE_MS = env_int("CF_BROWSER_KEEP_ALIVE_MS", 600_000, minimum=1)
-CF_CDP_URL = (
-    f"wss://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/"
-    f"browser-rendering/devtools/browser?keep_alive={CF_BROWSER_KEEP_ALIVE_MS}"
+CF_BROWSER_RUN_BASE_URL = (
+    f"https://api.cloudflare.com/client/v4/accounts/{CF_ACCOUNT_ID}/browser-rendering"
 )
+
+_RAW_CRAWL_PURPOSES = os.getenv("CF_CRAWL_PURPOSES", "ai-input")
+CF_CRAWL_PURPOSES = [
+    purpose.strip()
+    for purpose in _RAW_CRAWL_PURPOSES.split(",")
+    if purpose.strip()
+]
+if not CF_CRAWL_PURPOSES:
+    CF_CRAWL_PURPOSES = ["ai-input"]
 
 MAX_CRAWL_PAGES = env_int("CRAWL_MAX_PAGES", 25, minimum=1)
 MAX_DISCOVERY_DEPTH = env_int("CRAWL_MAX_DEPTH", 1, minimum=1)
-PAGE_TIMEOUT_MS = env_int("CRAWL_PAGE_TIMEOUT_MS", 30_000, minimum=1)
-SITE_CRAWL_SEMAPHORE_COUNT = env_int("CRAWL_SITE_SEMAPHORE_COUNT", 1, minimum=1)
+CRAWL_JOB_POLL_INTERVAL_MS = env_int("CRAWL_JOB_POLL_INTERVAL_MS", 1_000, minimum=1)
+CRAWL_JOB_TIMEOUT_MS = env_int("CRAWL_JOB_TIMEOUT_MS", 300_000, minimum=1)

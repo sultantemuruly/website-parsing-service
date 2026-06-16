@@ -1,6 +1,6 @@
 # Website Parsing Service — API Reference
 
-FastAPI service that scrapes websites (Crawl4AI + Cloudflare Browser Run over CDP) and social profiles (Bright Data), optionally splits content into RAG-ready chunks, and can summarize business context via an LLM.
+FastAPI service that scrapes websites with Cloudflare Browser Run quick actions and social profiles with Bright Data, optionally splits content into RAG-ready chunks, and can summarize business context via an LLM.
 
 Web crawl responses return **image-stripped markdown** with **hyperlinks preserved** (product pages, news, YouTube, partner sites, etc.) — cleaning happens at crawl time, not in `/process/page`.
 
@@ -66,7 +66,7 @@ const socialResult = await processRes.json(); // SocialResult — use socialResu
 | Only successful pages | `POST /crawl/site?url=...` → `CrawlPagePayload[]` |
 | Successes + per-URL failures | `POST /crawl/site/partial?url=...` → `PartialCrawlResult` |
 
-Use `POST /crawl/site/partial` by default for user-facing flows. It preserves successful pages and exposes crawl failures when the shared browser is recycled mid-run.
+Use `POST /crawl/site/partial` by default for user-facing flows. It preserves successful pages and exposes crawl failures when the upstream crawl job finishes partially or with terminal errors.
 
 Then call `POST /process/page` once per item in `pages` (or batch in your app).
 
@@ -318,15 +318,15 @@ Scrape one URL to markdown (images stripped, links preserved — see **Web endpo
 
 **`200`:** `CrawlPagePayload`
 
-**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` scrape failed, browser recovery was exhausted, or no markdown; `500` other.
+**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` scrape failed, the upstream Browser Run job failed or timed out, or no markdown was returned; `500` other.
 
 ---
 
 ### `POST /crawl/site`
 
-BFS site crawl: up to **`CRAWL_MAX_PAGES`** pages (default **25**), max depth **`CRAWL_MAX_DEPTH`** (default **1**), same origin only. Internal Crawl4AI fan-out is capped by `CRAWL_SITE_SEMAPHORE_COUNT` (default **1**).
+BFS site crawl: up to **`CRAWL_MAX_PAGES`** pages (default **25**), max depth **`CRAWL_MAX_DEPTH`** (default **1**), same origin only.
 
-Only **HTML** pages are discovered and crawled — asset URLs (images, PDFs, etc.) are skipped so crawl budget is not spent on non-page resources. Markdown on each page is image-stripped with links preserved (same rules as `/crawl`).
+Browser Run discovers pages from the seed URL and returns markdown per crawled page. Markdown on each page is image-stripped with links preserved (same rules as `/crawl`).
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -342,7 +342,7 @@ Only **HTML** pages are discovered and crawled — asset URLs (images, PDFs, etc
 
 ### `POST /crawl/site/partial`
 
-Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL. This is the recommended endpoint for site crawls on constrained deployments because successful pages are preserved even if the browser dies partway through a run.
+Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL. This is the recommended endpoint for site crawls because successful pages are preserved even if the Browser Run crawl job ends partially.
 
 | Query | Required | Description |
 |-------|----------|-------------|
@@ -350,7 +350,7 @@ Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL
 
 **`200`:** `PartialCrawlResult`
 
-**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if crawler recovery is exhausted before any result set can be returned; `500` other.
+**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if the upstream Browser Run job fails or times out before any result set can be returned; `500` other.
 
 ---
 
@@ -574,9 +574,9 @@ Typical flow: scrape → `/process/page` (optional, for chunks) → concatenate 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `CF_ACCOUNT_ID` | yes for web routes | Cloudflare account ID for Browser Rendering CDP |
+| `CF_ACCOUNT_ID` | yes for web routes | Cloudflare account ID for Browser Run |
 | `CF_API_TOKEN` | yes for web routes | API token with **Browser Rendering - Edit** permission |
-| `CF_BROWSER_KEEP_ALIVE_MS` | no | CDP session keep-alive in ms (default `600000`, max ~600000) |
+| `CF_CRAWL_PURPOSES` | no | Comma-separated Browser Run crawl purposes sent to Cloudflare (default `ai-input`) |
 | `BRIGHTDATA_API_TOKEN` | yes for social routes | Bright Data API token |
 | `OPENAI_API_KEY` | yes for `/business_profile` | OpenAI API key for the summary agent |
 | `PORT` | no | HTTP port (default `8000`) |
@@ -584,46 +584,19 @@ Typical flow: scrape → `/process/page` (optional, for chunks) → concatenate 
 | `CRAWL_QUEUE_TIMEOUT_MS` | no | How long a request waits for a crawl slot before returning `429` (default `1000`) |
 | `CRAWL_MAX_PAGES` | no | Max pages returned from a site crawl (default `25`) |
 | `CRAWL_MAX_DEPTH` | no | Deep-crawl BFS depth cap (default `1`) |
-| `CRAWL_SITE_SEMAPHORE_COUNT` | no | Crawl4AI per-site concurrency cap for site crawls (default `1`) |
-| `CRAWL_PAGE_TIMEOUT_MS` | no | Per-page Crawl4AI timeout in milliseconds (default `30000`) |
+| `CRAWL_JOB_POLL_INTERVAL_MS` | no | Poll interval for Browser Run crawl jobs (default `1000`) |
+| `CRAWL_JOB_TIMEOUT_MS` | no | Max time this API waits for a Browser Run crawl job before cancelling it (default `300000`) |
 
-Web routes use **Cloudflare Browser Run** over CDP (no local Chromium). Set `CF_ACCOUNT_ID` and `CF_API_TOKEN` before starting the server. Social routes use Bright Data. `/business_profile` uses OpenAI (`OPENAI_API_KEY`).
+Web routes use **Cloudflare Browser Run quick actions** over HTTPS. Set `CF_ACCOUNT_ID` and `CF_API_TOKEN` before starting the server. Social routes use Bright Data. `/business_profile` uses OpenAI (`OPENAI_API_KEY`).
 
 **Startup note:** `crawl/config.py` and `social/scrape/brightdata_adapter.py` validate `CF_*` and `BRIGHTDATA_API_TOKEN` at import time, so the process expects those variables even if you only call summary or process routes. Tests set dummy values via `tests/bootstrap.py`.
 
 ## How billing works
 
-Web crawl routes use **Cloudflare Browser Sessions** (Playwright / CDP). Official pricing: [Cloudflare Browser Run — Pricing](https://developers.cloudflare.com/browser-rendering/pricing/).
+Web crawl routes use **Cloudflare Browser Run quick actions**. Pricing and included usage change over time, so use Cloudflare’s current pricing page as the source of truth: [Cloudflare Browser Run — Pricing](https://developers.cloudflare.com/browser-rendering/pricing/).
 
-Cloudflare charges on **two separate metrics** — not per request, and not per “session created”:
+Operationally, the main levers in this service are:
 
-| Metric | What you pay for | Workers Paid |
-|--------|------------------|--------------|
-| **Browser hours** | Total time remote browser sessions exist (active or idle) | 10 hrs/month included, then **$0.09/hr** |
-| **Concurrent browsers** | How many sessions run **at the same time** (monthly average of daily peaks) | 10 included, then **$2.00/browser/month** |
-
-### Browser hours (duration)
-
-Usage is totaled in **seconds per day**, summed for the month, then rounded to whole hours (30+ minutes in a month rounds up to 1 hour).
-
-- A session that stays open counts for the **entire time it exists**, not just while a page is loading.
-- After a crawl finishes, the remote browser may remain open until its idle timeout (`CF_BROWSER_KEEP_ALIVE_MS`, default 10 minutes). **Those idle minutes are billable.**
-- Failed infrastructure errors are not charged; normal session lifetime is.
-
-### Concurrent browsers (overlap)
-
-This is **not** “how many crawls you ran this month.” Cloudflare records your **peak concurrent browser count each day**, then averages those daily peaks over the month.
-
-- `CRAWL_MAX_IN_FLIGHT=1` (default) keeps one browser per replica at a time — good for staying within included concurrency.
-- Brief spikes matter less than sustained high parallelism across replicas.
-
-### What this means for this service
-
-| Request | Typical browser usage |
-|---------|----------------------|
-| `POST /crawl` | One session for one page |
-| `POST /crawl/site` / `/crawl/site/partial` | One session for the whole site crawl (all pages in that job) |
-
-**Cost levers:** lower `CF_BROWSER_KEEP_ALIVE_MS` so sessions close sooner after a job; keep `CRAWL_MAX_IN_FLIGHT` ≤ your Cloudflare concurrency limit; avoid running many replicas that each hold an open browser at once.
-
-Workers Paid also has a base Workers plan fee (~$5/month). Workers Free includes **10 minutes of browser time per day** and **3 concurrent browsers** — usually too small for production. Monitor usage in the dashboard under **Compute → Browser Run**.
+- `CRAWL_MAX_IN_FLIGHT` limits how many crawl requests a replica will run at once.
+- `CRAWL_MAX_PAGES` and `CRAWL_MAX_DEPTH` bound how large each site crawl can become.
+- `CRAWL_JOB_TIMEOUT_MS` caps how long this API will wait on a single upstream crawl job before cancelling it.
