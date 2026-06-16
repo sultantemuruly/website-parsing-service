@@ -217,6 +217,21 @@ class EndpointLimiterTest(unittest.TestCase):
         self.assertEqual(response.json()["detail"], "Crawler is busy, retry later")
         scrape_mock.assert_not_called()
 class BrowserRunAdapterTest(unittest.IsolatedAsyncioTestCase):
+    async def test_crawl_site_accepts_string_job_id_from_start_response(self):
+        request_mock = AsyncMock(
+            side_effect=[
+                "job-123",
+                {"status": "completed", "records": []},
+                {"status": "completed", "records": []},
+            ]
+        )
+
+        with patch("crawl.crawler._browser_run_request", new=request_mock):
+            pages, failures = await crawl_site_with_outcomes("https://example.com")
+
+        self.assertEqual(pages, [])
+        self.assertEqual(failures, [])
+
     async def test_scrape_page_uses_markdown_endpoint(self):
         with patch(
             "crawl.crawler._browser_run_request",
@@ -237,7 +252,7 @@ class BrowserRunAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_crawl_site_collects_pages_and_failures_from_terminal_job(self):
         request_mock = AsyncMock(
             side_effect=[
-                {"id": "job-123"},
+                "job-123",
                 {"status": "running", "records": []},
                 {"status": "completed", "records": []},
                 {
@@ -273,7 +288,7 @@ class BrowserRunAdapterTest(unittest.IsolatedAsyncioTestCase):
     async def test_crawl_site_reports_terminal_job_failure_without_losing_pages(self):
         request_mock = AsyncMock(
             side_effect=[
-                {"id": "job-123"},
+                "job-123",
                 {"status": "running", "records": []},
                 {"status": "cancelled_due_to_limits", "records": []},
                 {

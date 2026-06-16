@@ -302,7 +302,12 @@ async def _cancel_crawl_job(job_id: str) -> None:
 
 async def _start_crawl_job(url: str, limit: int) -> str:
     result = await _browser_run_request("POST", "/crawl", payload=_crawl_request_payload(url, limit))
-    job_id = result.get("id") if isinstance(result, dict) else None
+    if isinstance(result, str):
+        job_id = result
+    elif isinstance(result, dict):
+        job_id = result.get("id")
+    else:
+        job_id = None
     if not job_id:
         raise ValueError("Cloudflare Browser Run did not return a crawl job id")
     return str(job_id)
