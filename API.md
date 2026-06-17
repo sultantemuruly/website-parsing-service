@@ -125,8 +125,8 @@ All error responses use FastAPI’s default shape:
 
 | Status | When |
 |--------|------|
-| `400` | Missing `url` query param; empty / whitespace-only `markdown` on `/process/page` |
-| `422` | Invalid JSON body (missing required fields, wrong types, whitespace-only or over-length `context` on `/business_profile`) on `/process/*` or `/business_profile` |
+| `400` | Empty / whitespace-only `markdown` on `/process/page`; explicitly empty `url` query value on scrape routes |
+| `422` | Missing required query params or invalid JSON body (missing required fields, wrong types, whitespace-only or over-length `context` on `/business_profile`) on `/process/*` or `/business_profile` |
 | `429` | Crawler is saturated and could not acquire a slot in time (`/crawl*`) |
 | `502` | Scrape failed, unsupported social URL, Bright Data error, no extractable social content, or LLM / summary failure |
 | `500` | Unexpected server error (e.g. site crawl engine threw before returning any results) |
@@ -318,7 +318,7 @@ Scrape one URL to markdown (images stripped, links preserved — see **Web endpo
 
 **`200`:** `CrawlPagePayload`
 
-**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` scrape failed, browser recovery was exhausted, or no markdown; `500` other.
+**Errors:** `422` missing `url`; `400` empty `url`; `429` crawler is saturated and could not acquire a slot in time; `502` scrape failed, browser recovery was exhausted, or no markdown; `500` other.
 
 ---
 
@@ -336,7 +336,7 @@ Only **HTML** pages are discovered and crawled — asset URLs (images, PDFs, etc
 
 **Empty array:** crawl ran but every page failed or had no markdown.
 
-**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if the crawl fails before any usable result can be returned; `500` other.
+**Errors:** `422` missing `url`; `400` empty `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if the crawl fails before any usable result can be returned; `500` other.
 
 ---
 
@@ -350,7 +350,7 @@ Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL
 
 **`200`:** `PartialCrawlResult`
 
-**Errors:** `400` missing `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if crawler recovery is exhausted before any result set can be returned; `500` other.
+**Errors:** `422` missing `url`; `400` empty `url`; `429` crawler is saturated and could not acquire a slot in time; `502` if crawler recovery is exhausted before any result set can be returned; `500` other.
 
 ---
 
@@ -364,7 +364,7 @@ Same limits and markdown cleaning as `/crawl/site`, but returns failures per URL
 
 **`200`:** `SocialScrapePayload`
 
-**Errors:** `400` missing `url`; `502` unsupported URL or Bright Data failure; `500` other.
+**Errors:** `422` missing `url`; `400` empty `url`; `502` unsupported URL or Bright Data failure; `500` other.
 
 #### Example scrape response
 
