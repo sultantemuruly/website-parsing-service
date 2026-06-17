@@ -1,7 +1,11 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+
+# Load repo-root .env before importing modules that validate env at import time.
+load_dotenv(override=True)
 
 from crawl.dependencies import get_crawl_limiter
 from crawl.router import router as crawl_router
