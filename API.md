@@ -279,8 +279,18 @@ type SummaryModel = {
   general_description: string; // 1-2 factual sentences: what the business is, who it serves, what it does
   key_advantages: string;      // main selling points as short phrases separated by periods
   main_goal: string;           // primary conversion or business objective inferred from the site
-  agent_description: string;   // behavioral instructions for a customer-facing AI agent (role, tone, guardrails)
+  agent_description: string;   // third-person description of the agent (profile copy, not instructions)
   topics: string[];            // permissible conversation topics evidenced in the source
+};
+```
+
+Request body for `POST /business_profile`:
+
+```ts
+type BusinessProfileRequest = {
+  context: string;        // required
+  agent_name?: string;    // optional — display name; used in agent_description when provided
+  agent_role?: string;    // optional — role label (e.g. sales, support); tailors agent fields when provided
 };
 ```
 
@@ -533,13 +543,17 @@ Extract a structured business profile from noisy page or site markdown (or any o
 
 ```json
 {
-  "context": "# Acme Corp\n\nWe build widgets for enterprise customers..."
+  "context": "# Acme Corp\n\nWe build widgets for enterprise customers...",
+  "agent_name": "Aria",
+  "agent_role": "sales"
 }
 ```
 
 | Field | Required | Notes |
 |-------|----------|--------|
 | `context` | yes | Non-empty after trim; max **200,000** characters |
+| `agent_name` | no | Agent display name; when omitted, inferred only from context |
+| `agent_role` | no | Agent role label; when omitted, inferred only from context |
 
 **`200`:** `SummaryModel`
 
@@ -551,7 +565,7 @@ Extract a structured business profile from noisy page or site markdown (or any o
   "general_description": "Acme Corp designs and manufactures enterprise widget systems for industrial automation. The company serves large manufacturers across North America and Europe.",
   "key_advantages": "24/7 support. Same-day shipping on standard orders. ISO 9001 certified. Custom integrations with major ERP platforms.",
   "main_goal": "Request a quote for an enterprise widget deployment.",
-  "agent_description": "You are a helpful assistant for Acme Corp. Help users explore widget systems and guide them toward requesting a quote. Stay professional and defer unverified pricing or contract terms to the sales team.",
+  "agent_description": "A sales assistant for Acme Corp that helps enterprise customers explore widget systems and find the right deployment option before requesting a quote.",
   "topics": [
     "Enterprise widget systems",
     "Industrial automation",

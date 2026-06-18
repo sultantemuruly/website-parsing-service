@@ -9,7 +9,7 @@ router = APIRouter(tags=["summary"])
 @router.post("/business_profile")
 async def business_profile(body: BusinessProfileRequest) -> SummaryModel:
     try:
-        return await summarize_business_profile(body.context)
+        return await summarize_business_profile(body)
     except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
     except Exception as e:

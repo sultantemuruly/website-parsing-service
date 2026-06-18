@@ -32,10 +32,13 @@ class SummaryModel(BaseModel):
     )
     agent_description: str = Field(
         description=(
-            "Instructions for a customer-facing AI agent: its role, tone, and behavioral "
-            "boundaries. Do not restate what the business is, what it sells, or its advantages — "
-            "those belong in other fields. Write in second person ('You are…') or imperative "
-            "voice ('Act as…', 'Help users…'). Ground every instruction in the context."
+            "A third-person description of the customer-facing AI agent — what it is, who it "
+            "helps, and what it is for. Write as profile or product copy (e.g. 'A sales assistant "
+            "for Acme that helps customers compare plans…'), not as instructions to the agent. "
+            "Do not use second person or imperative voice ('You are…', 'Help users…', 'Act as…'). "
+            "Do not restate general_description, key_advantages, or main_goal. When agent name "
+            "or role metadata is provided in the request, reflect them accurately; otherwise infer "
+            "conservatively from the context."
         ),
     )
     topics: list[str] = Field(
@@ -54,6 +57,23 @@ class BusinessProfileRequest(BaseModel):
         max_length=CONTEXT_MAX_LENGTH,
         description="Raw page or site markdown, or other text about the business to summarize",
     )
+    agent_name: str | None = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Optional display name for the customer-facing agent; when provided, use it in "
+            "agent_description without inventing a different name"
+        ),
+    )
+    agent_role: str | None = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Optional role label for the agent (e.g. sales, support, appointments); when "
+            "provided, tailor agent_description and topics to that role without contradicting "
+            "the context"
+        ),
+    )
 
     @field_validator("context", mode="before")
     @classmethod
@@ -62,4 +82,13 @@ class BusinessProfileRequest(BaseModel):
             value = value.strip()
         if isinstance(value, str) and not value:
             raise ValueError("context is required")
+        return value
+
+    @field_validator("agent_name", "agent_role", mode="before")
+    @classmethod
+    def strip_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
         return value
