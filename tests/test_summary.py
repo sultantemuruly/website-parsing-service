@@ -14,9 +14,16 @@ client = TestClient(app)
 
 SAMPLE_CONTEXT = "# Acme Corp\n\nWe build widgets for enterprise customers."
 SAMPLE_SUMMARY = SummaryModel(
+    product_name="Acme Corp",
     general_description="Acme Corp builds enterprise widgets.",
     key_advantages="24/7 support. Same-day shipping.",
     main_goal="Request a quote for an enterprise deployment.",
+    agent_description=(
+        "You are a helpful assistant for Acme Corp. Help users understand widget offerings "
+        "and guide them toward requesting a quote. Stay professional and defer pricing details "
+        "you cannot verify to the sales team."
+    ),
+    topics=["Enterprise widgets", "Requesting a quote", "Customer support"],
 )
 
 
@@ -72,9 +79,12 @@ class BusinessProfileEndpointTest(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
+        self.assertEqual(data["product_name"], SAMPLE_SUMMARY.product_name)
         self.assertEqual(data["general_description"], SAMPLE_SUMMARY.general_description)
         self.assertEqual(data["key_advantages"], SAMPLE_SUMMARY.key_advantages)
         self.assertEqual(data["main_goal"], SAMPLE_SUMMARY.main_goal)
+        self.assertEqual(data["agent_description"], SAMPLE_SUMMARY.agent_description)
+        self.assertEqual(data["topics"], SAMPLE_SUMMARY.topics)
 
     def test_business_profile_rejects_whitespace_only_context(self):
         response = client.post(

@@ -275,9 +275,12 @@ Returned by `POST /business_profile`.
 
 ```ts
 type SummaryModel = {
+  product_name: string;        // official product or brand name from the source
   general_description: string; // 1-2 factual sentences: what the business is, who it serves, what it does
   key_advantages: string;      // main selling points as short phrases separated by periods
   main_goal: string;           // primary conversion or business objective inferred from the site
+  agent_description: string;   // behavioral instructions for a customer-facing AI agent (role, tone, guardrails)
+  topics: string[];            // permissible conversation topics evidenced in the source
 };
 ```
 
@@ -544,9 +547,18 @@ Extract a structured business profile from noisy page or site markdown (or any o
 
 ```json
 {
+  "product_name": "Acme Corp",
   "general_description": "Acme Corp designs and manufactures enterprise widget systems for industrial automation. The company serves large manufacturers across North America and Europe.",
   "key_advantages": "24/7 support. Same-day shipping on standard orders. ISO 9001 certified. Custom integrations with major ERP platforms.",
-  "main_goal": "Request a quote for an enterprise widget deployment."
+  "main_goal": "Request a quote for an enterprise widget deployment.",
+  "agent_description": "You are a helpful assistant for Acme Corp. Help users explore widget systems and guide them toward requesting a quote. Stay professional and defer unverified pricing or contract terms to the sales team.",
+  "topics": [
+    "Enterprise widget systems",
+    "Industrial automation",
+    "Pricing and quotes",
+    "ERP integrations",
+    "Support and shipping"
+  ]
 }
 ```
 
