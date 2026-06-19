@@ -6,20 +6,23 @@ def build_business_profile_user_message(
     context: str,
     agent_name: str | None = None,
     agent_role: str | None = None,
+    industry: str | None = None,
 ) -> str:
     metadata_lines: list[str] = []
     if agent_name:
         metadata_lines.append(f"- Agent name: {agent_name}")
     if agent_role:
         metadata_lines.append(f"- Agent role: {agent_role}")
+    if industry:
+        metadata_lines.append(f"- Industry: {industry}")
 
     if not metadata_lines:
         return context
 
     metadata = "\n".join(metadata_lines)
     return (
-        "Optional agent metadata (use when generating agent_description and topics; "
-        "do not invent a conflicting name or role):\n"
+        "Optional business metadata (use when generating tone_style, agent_description, and "
+        "topics; do not invent a conflicting name, role, or industry):\n"
         f"{metadata}\n\n---\n\n{context}"
     )
 
@@ -29,6 +32,7 @@ async def summarize_business_profile(request: BusinessProfileRequest) -> Summary
         request.context,
         agent_name=request.agent_name,
         agent_role=request.agent_role,
+        industry=request.industry,
     )
     response = await get_agent().ainvoke(
         {"messages": [

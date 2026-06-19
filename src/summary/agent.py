@@ -3,7 +3,7 @@ import os
 from dotenv import load_dotenv
 from langchain.agents import create_agent
 
-from summary.schemas import SummaryModel
+from summary.schemas import SummaryModel, TONE_STYLES
 
 load_dotenv(override=True)
 
@@ -12,11 +12,15 @@ SYSTEM_PROMPT = """You summarize businesses from noisy website markdown or scrap
 Extract only facts supported by the provided context. Ignore navigation menus, repeated banners,
 promotional widgets, cookie notices, pagination, and image/link markup.
 
-The user message may include optional agent metadata (name and/or role) before the business
-context. When present, use those values in agent_description and topics — do not invent a
-different agent name or role. When absent, infer conservatively from the context only.
+The user message may include optional business metadata (name, role, and/or industry) before the
+business context. When present, use those values to improve tone_style, agent_description, and
+topics — do not invent a conflicting name, role, or industry. When absent, infer conservatively
+from the context only.
 
 Return structured output with:
+- tone_style: choose exactly one value from the allowed tone styles:
+  {tone_styles}. Base this on the business's brand voice, audience, and industry. If the context
+  is sparse, default to "professional".
 - product_name: the official product or brand name exactly as it appears in the context. If only
   a company name is given and no distinct product name, use the company name. Never invent or
   rebrand.
@@ -59,7 +63,7 @@ def get_agent():
             raise ValueError("OPENAI_API_KEY is not set")
         _agent = create_agent(
             model="openai:gpt-5.5",
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=SYSTEM_PROMPT.format(tone_styles=", ".join(f'"{style}"' for style in TONE_STYLES)),
             response_format=SummaryModel,
         )
     return _agent

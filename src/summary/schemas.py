@@ -1,9 +1,35 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 CONTEXT_MAX_LENGTH = 200_000
+TONE_STYLES = (
+    "friendly",
+    "professional",
+    "formal",
+    "casual",
+    "empathetic",
+    "assertive",
+    "humorous",
+)
+ToneStyle = Literal[
+    "friendly",
+    "professional",
+    "formal",
+    "casual",
+    "empathetic",
+    "assertive",
+    "humorous",
+]
 
 
 class SummaryModel(BaseModel):
+    tone_style: ToneStyle = Field(
+        description=(
+            "The single best-fit tone style for the business or brand voice, chosen from the "
+            "allowed tone styles based on the context and any provided industry metadata"
+        ),
+    )
     product_name: str = Field(
         description=(
             "The official product or brand name as stated in the context (company name if no "
@@ -74,6 +100,14 @@ class BusinessProfileRequest(BaseModel):
             "the context"
         ),
     )
+    industry: str | None = Field(
+        default=None,
+        max_length=255,
+        description=(
+            "Optional business industry label (e.g. healthcare, fintech, retail); when "
+            "provided, use it as an additional clue for tone_style and other summary fields"
+        ),
+    )
 
     @field_validator("context", mode="before")
     @classmethod
@@ -84,7 +118,7 @@ class BusinessProfileRequest(BaseModel):
             raise ValueError("context is required")
         return value
 
-    @field_validator("agent_name", "agent_role", mode="before")
+    @field_validator("agent_name", "agent_role", "industry", mode="before")
     @classmethod
     def strip_optional_text(cls, value: object) -> object:
         if isinstance(value, str):

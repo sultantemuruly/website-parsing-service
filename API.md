@@ -275,6 +275,7 @@ Returned by `POST /business_profile`.
 
 ```ts
 type SummaryModel = {
+  tone_style: "friendly" | "professional" | "formal" | "casual" | "empathetic" | "assertive" | "humorous";
   product_name: string;        // official product or brand name from the source
   general_description: string; // 1-2 factual sentences: what the business is, who it serves, what it does
   key_advantages: string;      // main selling points as short phrases separated by periods
@@ -291,6 +292,7 @@ type BusinessProfileRequest = {
   context: string;        // required
   agent_name?: string;    // optional — display name; used in agent_description when provided
   agent_role?: string;    // optional — role label (e.g. sales, support); tailors agent fields when provided
+  industry?: string;      // optional — business industry label; helps tone selection and phrasing
 };
 ```
 
@@ -545,7 +547,8 @@ Extract a structured business profile from noisy page or site markdown (or any o
 {
   "context": "# Acme Corp\n\nWe build widgets for enterprise customers...",
   "agent_name": "Aria",
-  "agent_role": "sales"
+  "agent_role": "sales",
+  "industry": "enterprise software"
 }
 ```
 
@@ -554,6 +557,7 @@ Extract a structured business profile from noisy page or site markdown (or any o
 | `context` | yes | Non-empty after trim; max **200,000** characters |
 | `agent_name` | no | Agent display name; when omitted, inferred only from context |
 | `agent_role` | no | Agent role label; when omitted, inferred only from context |
+| `industry` | no | Optional industry label; when omitted, inferred only from context |
 
 **`200`:** `SummaryModel`
 
@@ -561,6 +565,7 @@ Extract a structured business profile from noisy page or site markdown (or any o
 
 ```json
 {
+  "tone_style": "professional",
   "product_name": "Acme Corp",
   "general_description": "Acme Corp designs and manufactures enterprise widget systems for industrial automation. The company serves large manufacturers across North America and Europe.",
   "key_advantages": "24/7 support. Same-day shipping on standard orders. ISO 9001 certified. Custom integrations with major ERP platforms.",

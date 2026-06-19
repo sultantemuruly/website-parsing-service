@@ -14,6 +14,7 @@ client = TestClient(app)
 
 SAMPLE_CONTEXT = "# Acme Corp\n\nWe build widgets for enterprise customers."
 SAMPLE_SUMMARY = SummaryModel(
+    tone_style="professional",
     product_name="Acme Corp",
     general_description="Acme Corp builds enterprise widgets.",
     key_advantages="24/7 support. Same-day shipping.",
@@ -44,9 +45,11 @@ class BuildBusinessProfileUserMessageTest(unittest.TestCase):
             SAMPLE_CONTEXT,
             agent_name="Aria",
             agent_role="sales",
+            industry="enterprise software",
         )
         self.assertIn("Agent name: Aria", message)
         self.assertIn("Agent role: sales", message)
+        self.assertIn("Industry: enterprise software", message)
         self.assertTrue(message.endswith(SAMPLE_CONTEXT))
 
 
@@ -69,12 +72,14 @@ class SummarizeBusinessProfileServiceTest(unittest.IsolatedAsyncioTestCase):
                 context=SAMPLE_CONTEXT,
                 agent_name="Aria",
                 agent_role="sales",
+                industry="enterprise software",
             ),
         )
 
         user_message = get_agent.return_value.ainvoke.await_args.args[0]["messages"][0]["content"]
         self.assertIn("Agent name: Aria", user_message)
         self.assertIn("Agent role: sales", user_message)
+        self.assertIn("Industry: enterprise software", user_message)
 
     @patch("summary.service.get_agent")
     async def test_raises_when_structured_response_missing(self, get_agent):
@@ -107,11 +112,12 @@ class BusinessProfileEndpointTest(unittest.TestCase):
 
         response = client.post(
             "/business_profile",
-            json={"context": SAMPLE_CONTEXT},
+            json={"context": SAMPLE_CONTEXT, "industry": "enterprise software"},
         )
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
+        self.assertEqual(data["tone_style"], SAMPLE_SUMMARY.tone_style)
         self.assertEqual(data["product_name"], SAMPLE_SUMMARY.product_name)
         self.assertEqual(data["general_description"], SAMPLE_SUMMARY.general_description)
         self.assertEqual(data["key_advantages"], SAMPLE_SUMMARY.key_advantages)
@@ -129,12 +135,14 @@ class BusinessProfileEndpointTest(unittest.TestCase):
                 "context": SAMPLE_CONTEXT,
                 "agent_name": "Aria",
                 "agent_role": "sales",
+                "industry": "enterprise software",
             },
         )
 
         self.assertEqual(response.status_code, 200)
         user_message = get_agent.return_value.ainvoke.await_args.args[0]["messages"][0]["content"]
         self.assertIn("Agent name: Aria", user_message)
+        self.assertIn("Industry: enterprise software", user_message)
 
     def test_business_profile_rejects_whitespace_only_context(self):
         response = client.post(
