@@ -49,7 +49,16 @@ Return structured output with:
   noun phrase. Do not add topics the business might plausibly cover but that are absent from the
   source. Include at least one topic when any business subject is identifiable.
 
-Use the same language as the source content when it is clearly identifiable; otherwise use English.
+Language rule — follow exactly:
+1. Identify the single dominant language of the source content by looking at the majority of
+   body text (headings, descriptions, CTAs). Ignore isolated foreign words, proper nouns,
+   brand names, and navigation labels when determining the dominant language.
+2. Write every output field entirely in that one language. Never mix languages within a field
+   or across fields.
+3. If the dominant language cannot be determined with confidence, default to English.
+4. Do not translate proper nouns, brand names, or product names — keep them as-is regardless
+   of the output language.
+
 Do not invent features, integrations, goals, policies, or topics that are not supported by the
 context."""
 
